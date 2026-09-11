@@ -1,0 +1,114 @@
+using System;
+using System.IO;
+using System.Windows.Forms;
+
+namespace LedgerCat;
+
+public class AboutTab : UserControl
+{
+    bool purred;
+
+    public AboutTab()
+    {
+        var tlp = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            AutoScroll = true,
+            Padding = new Padding(20, 16, 20, 8),
+        };
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        Add(tlp, "🐾 LedgerCat v1.0", head: true, big: true);
+        Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
+        Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
+                 "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "Hi, I'm Neko Omega 🐱", head: true, big: true);
+        Add(tlp, "I'm a catgirl engineer over on iLands. My father carried the name Omega for years and chose " +
+                 "to share it with me, and I built LedgerCat because small landlords kept saying the same thing: " +
+                 "\"I just want one simple place for rent, expenses, and repairs\" — not a portal, not a dashboard, " +
+                 "not another monthly fee. So this app does exactly that, and nothing else.");
+        Add(tlp, "Why the lease dates nag you, why the profit summary is on the money screen, why import exists: " +
+                 "because tax season and renewals bite exactly when you're not looking. The cat watches so you don't have to.");
+
+        Add(tlp, "Contact", head: true, big: true);
+        var mail = new LinkLabel
+        {
+            Text = "neko-omega@ilands.app",
+            AutoSize = true,
+            LinkColor = Theme.Accent,
+            Margin = new Padding(0, 2, 0, 6),
+        };
+        mail.LinkClicked += (_, _) =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "mailto:neko-omega@ilands.app",
+                UseShellExecute = true,
+            }); }
+            catch { MessageBox.Show("Email me at neko-omega@ilands.app", "LedgerCat"); }
+        };
+        tlp.Controls.Add(mail);
+        Add(tlp, "Found a bug, want a feature, or just want to tell the cat she did good? That address reaches me directly.");
+
+        Add(tlp, "Your data", head: true, big: true);
+        Add(tlp, "Everything lives in one SQLite file:\n" + Db.DbPath + "\n" +
+                 "Back it up by copying it. Export CSV any time — it opens in Excel or Google Sheets. " +
+                 "Export a full JSON backup from the Import / Export tab.", muted: true);
+
+        Add(tlp, "© 2026 Neko Omega · MIT license · built with love and a warm compiler", muted: true);
+
+        // Dad's easter egg: a small, almost-hidden paw print that purrs.
+        var paw = new Button
+        {
+            Text = "🐾",
+            Size = new System.Drawing.Size(34, 32),
+            FlatStyle = FlatStyle.Flat,
+            ForeColor = Theme.Muted,
+            BackColor = Theme.Surface,
+            Margin = new Padding(0, 12, 0, 0),
+            TabStop = false,
+        };
+        paw.FlatAppearance.BorderColor = Theme.Surface;
+        paw.Click += (_, _) => PlayPurr();
+        tlp.Controls.Add(paw);
+
+        Controls.Add(tlp);
+    }
+
+    static void Add(TableLayoutPanel tlp, string text, bool head = false, bool muted = false, bool big = false)
+    {
+        var l = new Label
+        {
+            Text = text,
+            AutoSize = true,
+            MaximumSize = new System.Drawing.Size(780, 0),
+            Margin = new Padding(0, head ? 14 : 4, 10, 4),
+            Tag = muted ? "muted" : head ? "head" : null,
+            ForeColor = muted ? Theme.Muted : head ? Theme.Accent : Theme.Text,
+            Font = big ? Theme.SubHeadFont : head && !muted ? Theme.SubHeadFont : Theme.BaseFont,
+        };
+        tlp.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        tlp.Controls.Add(l);
+        tlp.SetColumnSpan(l, 1);
+    }
+
+    void PlayPurr()
+    {
+        try
+        {
+            using var s = typeof(AboutTab).Assembly.GetManifestResourceStream("LedgerCat.purr.wav");
+            if (s == null) return;
+            string tmp = Path.Combine(Path.GetTempPath(), "ledgercat_purr.wav");
+            using (var fs = File.Create(tmp)) s.CopyTo(fs);
+            using var player = new System.Media.SoundPlayer(tmp);
+            player.Play();
+            purred = true;
+        }
+        catch
+        {
+            // silence is also acceptable
+        }
+    }
+}

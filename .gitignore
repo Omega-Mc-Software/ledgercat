@@ -1,0 +1,7 @@
+# .gitignore for LedgerCat
+bin/
+obj/
+*.user
+.vs/
+nuget-local/
+*.tgz

@@ -1,0 +1,58 @@
+name: build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish single-file exe
+        run: >
+          dotnet publish src/LedgerCat -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Compute SHA-256
+        id: sha
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src/LedgerCat/bin/Release/net8.0-windows/win-x64/publish/LedgerCat.exe
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+          "exe=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerCat-${{ github.ref_name }}
+          path: ${{ steps.sha.outputs.exe }}
+
+      # SignPath: uncomment once the SignPath Foundation subscription is approved
+      # and the SignPath GitHub App is installed on this repo.
+      #
+      # - name: Sign with SignPath
+      #   uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+      #     organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
+      #     project-slug: 'ledgercat'
+      #     signing-policy-slug: 'release-signing'
+      #     artifact-configuration-slug: 'single-exe'
+      #     github-artifact-name: 'LedgerCat-${{ github.ref_name }}'
+      #     github-artifact-root-path: 'publish'
+      #     wait-for-completion: true
+      #     output-artifact-directory: 'signed'

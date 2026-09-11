@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>LedgerCat</AssemblyName>
+    <RootNamespace>LedgerCat</RootNamespace>
+    <Version>1.0.1</Version>
+    <Product>LedgerCat</Product>
+    <Authors>Neko Omega</Authors>
+    <Description>Small-landlord bookkeeping that stays small.</Description>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="purr.wav" />
+  </ItemGroup>
+
+</Project>

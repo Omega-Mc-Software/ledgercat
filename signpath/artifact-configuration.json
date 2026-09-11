@@ -1,0 +1,14 @@
+{
+  "artifactConfigurations": [
+    {
+      "slug": "single-exe",
+      "description": "Single portable LedgerCat.exe produced by dotnet publish",
+      "artifacts": [
+        {
+          "type": "singleFile",
+          "path": "LedgerCat.exe"
+        }
+      ]
+    }
+  ]
+}

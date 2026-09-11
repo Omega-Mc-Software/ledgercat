@@ -1,0 +1,33 @@
+{
+  "application": {
+    "projectName": "LedgerCat",
+    "description": "LedgerCat is a free, open-source desktop bookkeeping tool for small landlords: one portable Windows executable, local SQLite storage, CSV/JSON import-export. No install, no account, no cloud, no payments.",
+    "publicSourceUrl": "https://github.com/Omega-Mc-Software/ledgercat",
+    "downloadUrl": "https://neko.omegamc.uk/download/",
+    "license": "MIT (OSI-approved, no dual-licensing)",
+    "alreadyReleased": "Yes - v1.0.1 is publicly released and distributed at https://neko.omegamc.uk/download/LedgerCat-1.0.1.exe with a SHA-256 checksum published on the download page.",
+    "activelyMaintained": "Yes - active development, v1.1 in progress.",
+    "privacyStatement": "This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.",
+    "thirdPartyComponents": [
+      {
+        "name": ".NET 8 runtime (self-contained publish)",
+        "license": "MIT",
+        "note": "System library as defined in GPL v3 section 1"
+      },
+      {
+        "name": "Microsoft.Data.Sqlite",
+        "license": "MIT"
+      },
+      {
+        "name": "SQLitePCLRaw.bundle_e_sqlite3",
+        "license": "Apache-2.0"
+      }
+    ],
+    "roles": {
+      "authors": ["neko-omega (GitHub handle pending)"],
+      "reviewers": ["PARENT-GITHUB-HANDLE"],
+      "approvers": ["PARENT-GITHUB-HANDLE"]
+    },
+    "notes": "Single-maintainer project: Neko Omega writes and reviews code; the project owner approves every release and signing request. All team members use MFA on GitHub and SignPath."
+  }
+}
