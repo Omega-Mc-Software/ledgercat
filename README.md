@@ -34,9 +34,9 @@ CI builds the same artifact on every tagged release via GitHub Actions
 
 ## Screens
 
-- **Properties & Units** — properties, units, tenants, rent and due dates, lease renewal alerts
-- **Money In / Out** — rent received and expenses paid, monthly profit, yearly summary
-- **Appointments & Requests** — maintenance and viewing requests, open/done
+- **Properties & Units** — properties, units, tenants, contact name and phone, State ID / driver's license, rent and due dates, lease and move-out notes, lease renewal alerts; deletes go to an undoable Deleted view
+- **Money In / Out** — rent received and expenses paid, monthly profit, yearly summary, search and category filter, edit any entry, undoable deletes
+- **Appointments & Requests** — maintenance and viewing requests, open/done/canceled status, tenant and handyman contacts, undoable deletes
 - **Import/Export** — CSV and JSON, both directions, always
 - **About** — who made this and why
 

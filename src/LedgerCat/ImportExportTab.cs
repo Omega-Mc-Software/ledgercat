@@ -35,6 +35,7 @@ public class ImportExportTab : UserControl
     {
         public long id;
         public string name = "", unit = "", tenant = "", lease_end = "";
+        public string contact_name = "", contact_phone = "", state_id = "", lease_notes = "";
         public decimal rent;
         public int due_day = 1;
     }
@@ -48,7 +49,9 @@ public class ImportExportTab : UserControl
 
     class ReqRow
     {
-        public string created = "", kind = "maintenance", description = "";
+        public string created = "", kind = "maintenance", description = "", status = "open";
+        public string contact_name = "", contact_phone = "", company = "";
+        public string handyman_name = "", handyman_phone = "";
         public long? property_id;
         public bool done;
     }
@@ -125,9 +128,9 @@ public class ImportExportTab : UserControl
         ["transactions"] = ("Transactions CSV|*.csv",
             new[] { "date", "property", "kind", "category", "amount", "note" }, "transactions"),
         ["properties"] = ("Properties CSV|*.csv",
-            new[] { "name", "unit", "tenant", "rent", "due_day", "lease_end" }, "properties"),
+            new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "due_day", "lease_end", "lease_notes" }, "properties"),
         ["requests"] = ("Requests CSV|*.csv",
-            new[] { "created", "property", "kind", "description", "status" }, "requests"),
+            new[] { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone" }, "requests"),
     };
 
     void ImportCsv(string kindKey)
@@ -234,9 +237,13 @@ public class ImportExportTab : UserControl
         int cName = Csv.FindCol(header, "name");
         int cUnit = Csv.FindCol(header, "unit");
         int cTenant = Csv.FindCol(header, "tenant");
+        int cContactName = Csv.FindCol(header, "contact_name");
+        int cContactPhone = Csv.FindCol(header, "contact_phone");
+        int cStateId = Csv.FindCol(header, "state_id");
         int cRent = Csv.FindCol(header, "rent");
         int cDue = Csv.FindCol(header, "due_day");
         int cLease = Csv.FindCol(header, "lease_end");
+        int cLeaseNotes = Csv.FindCol(header, "lease_notes");
         if (cName < 0) return false;
 
         string name = Cell(r, cName).Trim();
@@ -258,9 +265,13 @@ public class ImportExportTab : UserControl
             Name = name,
             Unit = unit,
             Tenant = cTenant >= 0 ? Cell(r, cTenant).Trim() : "",
+            ContactName = cContactName >= 0 ? Cell(r, cContactName).Trim() : "",
+            ContactPhone = cContactPhone >= 0 ? Cell(r, cContactPhone).Trim() : "",
+            StateId = cStateId >= 0 ? Cell(r, cStateId).Trim() : "",
             Rent = rent,
             DueDay = due,
             LeaseEnd = lease,
+            LeaseNotes = cLeaseNotes >= 0 ? Cell(r, cLeaseNotes).Trim() : "",
         };
         np.Id = Db.SaveProp(np);
         props.Add(np);
@@ -274,6 +285,11 @@ public class ImportExportTab : UserControl
         int cKind = Csv.FindCol(header, "kind");
         int cDesc = Csv.FindCol(header, "description");
         int cStatus = Csv.FindCol(header, "status");
+        int cContactName = Csv.FindCol(header, "contact_name");
+        int cContactPhone = Csv.FindCol(header, "contact_phone");
+        int cCompany = Csv.FindCol(header, "company");
+        int cHandyName = Csv.FindCol(header, "handyman_name");
+        int cHandyPhone = Csv.FindCol(header, "handyman_phone");
         if (cDate < 0 || cDesc < 0) return false;
 
         if (!Ui.ParseDate(Cell(r, cDate).Trim(), out var d)) return false;
@@ -283,7 +299,12 @@ public class ImportExportTab : UserControl
         string kindRaw = Cell(r, cKind).Trim().ToLowerInvariant();
         string kind = kindRaw.StartsWith("view") ? "viewing" : "maintenance";
         string statusRaw = cStatus >= 0 ? Cell(r, cStatus).Trim().ToLowerInvariant() : "";
-        bool done = statusRaw is "done" or "closed" or "complete" or "completed";
+        string status = statusRaw switch
+        {
+            "done" or "closed" or "complete" or "completed" => "done",
+            "canceled" or "cancelled" => "canceled",
+            _ => "open",
+        };
 
         Db.SaveReq(new Req
         {
@@ -291,7 +312,12 @@ public class ImportExportTab : UserControl
             PropertyId = cProp >= 0 ? ResolveProperty(Cell(r, cProp), ref props) : null,
             Kind = kind,
             Description = desc,
-            Done = done,
+            Status = status,
+            ContactName = cContactName >= 0 ? Cell(r, cContactName).Trim() : "",
+            ContactPhone = cContactPhone >= 0 ? Cell(r, cContactPhone).Trim() : "",
+            Company = cCompany >= 0 ? Cell(r, cCompany).Trim() : "",
+            HandymanName = cHandyName >= 0 ? Cell(r, cHandyName).Trim() : "",
+            HandymanPhone = cHandyPhone >= 0 ? Cell(r, cHandyPhone).Trim() : "",
         });
         return true;
     }
@@ -320,14 +346,16 @@ public class ImportExportTab : UserControl
                     sb.AppendLine(Csv.Row(t.Date, t.PropLabel, t.Kind, t.Category, t.Amount.ToString("0.##", CultureInfo.InvariantCulture), t.Note));
                 break;
             case "properties":
-                sb.AppendLine("name,unit,tenant,rent,due_day,lease_end");
+                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,due_day,lease_end,lease_notes");
                 foreach (var p in Db.ListProps())
-                    sb.AppendLine(Csv.Row(p.Name, p.Unit, p.Tenant, p.Rent.ToString("0.##", CultureInfo.InvariantCulture), p.DueDay, p.LeaseEnd));
+                    sb.AppendLine(Csv.Row(p.Name, p.Unit, p.Tenant, p.ContactName, p.ContactPhone, p.StateId,
+                        p.Rent.ToString("0.##", CultureInfo.InvariantCulture), p.DueDay, p.LeaseEnd, p.LeaseNotes));
                 break;
             case "requests":
-                sb.AppendLine("created,property,kind,description,status");
+                sb.AppendLine("created,property,kind,description,status,contact_name,contact_phone,company,handyman_name,handyman_phone");
                 foreach (var q in Db.ListReqs())
-                    sb.AppendLine(Csv.Row(q.Created, q.PropLabel, q.Kind, q.Description, q.Done ? "done" : "open"));
+                    sb.AppendLine(Csv.Row(q.Created, q.PropLabel, q.Kind, q.Description, q.Status,
+                        q.ContactName, q.ContactPhone, q.Company, q.HandymanName, q.HandymanPhone));
                 break;
         }
 
@@ -353,6 +381,8 @@ public class ImportExportTab : UserControl
             {
                 id = p.Id,
                 name = p.Name, unit = p.Unit, tenant = p.Tenant,
+                contact_name = p.ContactName, contact_phone = p.ContactPhone,
+                state_id = p.StateId, lease_notes = p.LeaseNotes,
                 rent = p.Rent, due_day = p.DueDay, lease_end = p.LeaseEnd,
             });
         foreach (var t in Db.ListTxns())
@@ -365,7 +395,9 @@ public class ImportExportTab : UserControl
             backup.requests.Add(new ReqRow
             {
                 created = q.Created, property_id = q.PropertyId, kind = q.Kind,
-                description = q.Description, done = q.Done,
+                description = q.Description, status = q.Status, done = q.Done,
+                contact_name = q.ContactName, contact_phone = q.ContactPhone,
+                company = q.Company, handyman_name = q.HandymanName, handyman_phone = q.HandymanPhone,
             });
 
         File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(backup, JsonOpts));
@@ -399,6 +431,8 @@ public class ImportExportTab : UserControl
                 var np = new Property
                 {
                     Name = p.name, Unit = p.unit, Tenant = p.tenant,
+                    ContactName = p.contact_name, ContactPhone = p.contact_phone,
+                    StateId = p.state_id, LeaseNotes = p.lease_notes,
                     Rent = p.rent, DueDay = p.due_day, LeaseEnd = p.lease_end,
                 };
                 np.Id = Db.SaveProp(np);
@@ -421,7 +455,9 @@ public class ImportExportTab : UserControl
                 Db.SaveReq(new Req
                 {
                     Created = q.created, PropertyId = pid, Kind = q.kind,
-                    Description = q.description, Done = q.done,
+                    Description = q.description, Status = q.status,
+                    ContactName = q.contact_name, ContactPhone = q.contact_phone,
+                    Company = q.company, HandymanName = q.handyman_name, HandymanPhone = q.handyman_phone,
                 });
             }
 

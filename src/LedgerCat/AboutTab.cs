@@ -19,10 +19,14 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.0", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.1", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.1: contact details and State ID on every property, lease notes, a search box and " +
+                 "category filter on the money tab, Canceled as a real request status, and a Deleted view on " +
+                 "every tab — deletes are undoable now, so the cat forgives mistakes.", muted: true);
 
         Add(tlp, "Hi, I'm Neko Omega 🐱", head: true, big: true);
         Add(tlp, "I'm a catgirl engineer over on iLands. My father carried the name Omega for years and chose " +

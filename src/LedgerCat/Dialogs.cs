@@ -13,9 +13,13 @@ public class PropertyDialog : Form
     readonly TextBox nameT = new() { Width = 240 };
     readonly TextBox unitT = new() { Width = 240 };
     readonly TextBox tenantT = new() { Width = 240 };
+    readonly TextBox contactNameT = new() { Width = 240 };
+    readonly TextBox contactPhoneT = new() { Width = 240 };
+    readonly TextBox stateIdT = new() { Width = 240 };
     readonly TextBox rentT = new() { Width = 240 };
     readonly TextBox dueT = new() { Width = 240 };
     readonly TextBox leaseT = new() { Width = 240 };
+    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 56 };
 
     public PropertyDialog(Property? existing)
     {
@@ -24,7 +28,7 @@ public class PropertyDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(380, 300);
+        ClientSize = new Size(400, 470);
         Font = Theme.BaseFont;
 
         if (existing != null)
@@ -33,9 +37,13 @@ public class PropertyDialog : Form
             nameT.Text = P.Name;
             unitT.Text = P.Unit;
             tenantT.Text = P.Tenant;
+            contactNameT.Text = P.ContactName;
+            contactPhoneT.Text = P.ContactPhone;
+            stateIdT.Text = P.StateId;
             rentT.Text = P.Rent == 0 ? "" : P.Rent.ToString("0.##");
             dueT.Text = P.DueDay.ToString();
             leaseT.Text = P.LeaseEnd;
+            notesT.Text = P.LeaseNotes;
         }
 
         var tlp = new TableLayoutPanel
@@ -43,26 +51,31 @@ public class PropertyDialog : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(14),
             ColumnCount = 2,
-            RowCount = 7,
+            AutoScroll = true,
         };
-        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         AddRow(tlp, "Property *", nameT);
         AddRow(tlp, "Unit / apt", unitT);
         AddRow(tlp, "Tenant", tenantT);
-        AddRow(tlp, "Rent $/mo", rentT);
-        AddRow(tlp, "Due day (1-28)", dueT);
+        AddRow(tlp, "Contact name", contactNameT);
+        AddRow(tlp, "Contact phone", contactPhoneT);
+        AddRow(tlp, "State ID / DL", stateIdT);
+        AddRow(tlp, "Rent $/mo *", rentT);
+        AddRow(tlp, "Due day * (1-28)", dueT);
         AddRow(tlp, "Lease ends", leaseT);
+        AddRow(tlp, "Lease / move notes", notesT);
 
         var hint = new Label
         {
-            Text = "Lease date format: 2027-08-31 — leave empty if month-to-month.",
+            Text = "Lease date format: 2027-08-31 — leave empty if month-to-month.\n" +
+                   "Notes are for renewal plans, move-out dates, deposit details.",
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
         };
-        tlp.Controls.Add(hint, 0, 6);
+        tlp.Controls.Add(hint, 0, 10);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
@@ -91,6 +104,9 @@ public class PropertyDialog : Form
         tlp.Controls.Add(c);
     }
 
+    static bool Confirm(string message, string title) =>
+        MessageBox.Show(message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+
     void Save()
     {
         if (string.IsNullOrWhiteSpace(nameT.Text))
@@ -118,12 +134,26 @@ public class PropertyDialog : Form
             return;
         }
 
+        // Guard rails: an empty tenant or phone is allowed, but never by accident.
+        if (string.IsNullOrWhiteSpace(tenantT.Text) && !Confirm(
+                "No tenant is listed for this property.\n\nSave anyway?\n(You can add the tenant later in Edit.)",
+                "No tenant listed"))
+            return;
+        if (string.IsNullOrWhiteSpace(contactPhoneT.Text) && !Confirm(
+                "No contact phone number is filled in.\n\nSave anyway?\n(When rent is late or a pipe bursts, this number is the one you want.)",
+                "No contact phone"))
+            return;
+
         P.Name = nameT.Text.Trim();
         P.Unit = unitT.Text.Trim();
         P.Tenant = tenantT.Text.Trim();
+        P.ContactName = contactNameT.Text.Trim();
+        P.ContactPhone = contactPhoneT.Text.Trim();
+        P.StateId = stateIdT.Text.Trim();
         P.Rent = rent;
         P.DueDay = due;
         P.LeaseEnd = lease;
+        P.LeaseNotes = notesT.Text.Trim();
         DialogResult = DialogResult.OK;
     }
 }
@@ -141,12 +171,17 @@ public class TxnDialog : Form
     readonly List<Property> props;
     readonly List<long?> propIds = new();
 
-    public TxnDialog(string kind, List<Property> props)
+    public TxnDialog(string kind, List<Property> props) : this(kind, props, null) { }
+
+    public TxnDialog(string kind, List<Property> props, Txn? existing)
     {
-        this.kind = kind;
+        this.kind = existing?.Kind ?? kind;
         this.props = props;
 
-        Text = kind == "rent" ? "Record rent (money in)" : "Add expense (money out)";
+        bool editing = existing != null;
+        Text = editing
+            ? (this.kind == "rent" ? "Edit rent entry" : "Edit expense entry")
+            : (this.kind == "rent" ? "Record rent (money in)" : "Add expense (money out)");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -154,7 +189,11 @@ public class TxnDialog : Form
         ClientSize = new Size(380, 280);
         Font = Theme.BaseFont;
 
-        dateT.Text = Ui.Today();
+        dateT.Text = existing?.Date ?? Ui.Today();
+        catT.Text = existing?.Category ?? "";
+        amountT.Text = existing is { Amount: > 0 } ? existing.Amount.ToString("0.##") : "";
+        noteT.Text = existing?.Note ?? "";
+
         propIds.Add(null);
         propC.Items.Add("(no property)");
         foreach (var p in props)
@@ -163,6 +202,11 @@ public class TxnDialog : Form
             propC.Items.Add(p.Label);
         }
         propC.SelectedIndex = 0;
+        if (existing?.PropertyId is long pid)
+        {
+            var idx = propIds.IndexOf(pid);
+            if (idx >= 0) propC.SelectedIndex = idx;
+        }
 
         var tlp = new TableLayoutPanel
         {
@@ -181,7 +225,7 @@ public class TxnDialog : Form
 
         var catHint = new Label
         {
-            Text = kind == "rent"
+            Text = this.kind == "rent"
                 ? "Tip: category can be which month this rent covers, e.g. \"September\"."
                 : "e.g. repair, plumbing, supplies, insurance, tax.",
             Tag = "muted",
@@ -252,23 +296,37 @@ public class ReqDialog : Form
     readonly TextBox dateT = new() { Width = 240 };
     readonly ComboBox propC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox kindC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
-    readonly TextBox descT = new() { Width = 240, Multiline = true, Height = 70 };
+    readonly TextBox descT = new() { Width = 240, Multiline = true, Height = 60 };
+    readonly TextBox contactNameT = new() { Width = 240 };
+    readonly TextBox contactPhoneT = new() { Width = 240 };
+    readonly TextBox companyT = new() { Width = 240 };
+    readonly TextBox handyNameT = new() { Width = 240 };
+    readonly TextBox handyPhoneT = new() { Width = 240 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
 
-    public ReqDialog(List<Property> props)
+    public ReqDialog(List<Property> props) : this(props, null) { }
+
+    public ReqDialog(List<Property> props, Req? existing)
     {
         this.props = props;
 
-        Text = "Add request";
+        Text = existing == null ? "Add request" : "Edit request";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(380, 320);
+        ClientSize = new Size(400, 500);
         Font = Theme.BaseFont;
 
-        dateT.Text = Ui.Today();
+        dateT.Text = existing?.Created ?? Ui.Today();
+        descT.Text = existing?.Description ?? "";
+        contactNameT.Text = existing?.ContactName ?? "";
+        contactPhoneT.Text = existing?.ContactPhone ?? "";
+        companyT.Text = existing?.Company ?? "";
+        handyNameT.Text = existing?.HandymanName ?? "";
+        handyPhoneT.Text = existing?.HandymanPhone ?? "";
+
         propIds.Add(null);
         propC.Items.Add("(no property)");
         foreach (var p in props)
@@ -277,23 +335,44 @@ public class ReqDialog : Form
             propC.Items.Add(p.Label);
         }
         propC.SelectedIndex = 0;
+        if (existing?.PropertyId is long pid)
+        {
+            var idx = propIds.IndexOf(pid);
+            if (idx >= 0) propC.SelectedIndex = idx;
+        }
         kindC.Items.Add("Maintenance");
         kindC.Items.Add("Viewing");
-        kindC.SelectedIndex = 0;
+        kindC.SelectedIndex = existing?.Kind == "viewing" ? 1 : 0;
 
         var tlp = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(14),
             ColumnCount = 2,
+            AutoScroll = true,
         };
-        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         AddRow(tlp, "Date *", dateT);
         AddRow(tlp, "Property", propC);
         AddRow(tlp, "Type", kindC);
         AddRow(tlp, "What's needed", descT);
+        AddRow(tlp, "Contact name", contactNameT);
+        AddRow(tlp, "Contact phone", contactPhoneT);
+        AddRow(tlp, "Company", companyT);
+        AddRow(tlp, "Handyman name", handyNameT);
+        AddRow(tlp, "Handyman phone", handyPhoneT);
+
+        var hint = new Label
+        {
+            Text = "Tenant contact = who lives there. Handyman = who you call to fix it.",
+            Tag = "muted",
+            AutoSize = true,
+            ForeColor = Theme.Muted,
+        };
+        tlp.Controls.Add(hint, 0, 9);
+        tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
         var cancel = Ui.Btn("Cancel", 100, (_, _) => DialogResult = DialogResult.Cancel);
@@ -343,7 +422,12 @@ public class ReqDialog : Form
             PropertyId = idx >= 0 ? propIds[idx] : null,
             Kind = kindC.SelectedIndex == 1 ? "viewing" : "maintenance",
             Description = descT.Text.Trim(),
-            Done = false,
+            Status = "open",
+            ContactName = contactNameT.Text.Trim(),
+            ContactPhone = contactPhoneT.Text.Trim(),
+            Company = companyT.Text.Trim(),
+            HandymanName = handyNameT.Text.Trim(),
+            HandymanPhone = handyPhoneT.Text.Trim(),
         };
         DialogResult = DialogResult.OK;
     }
