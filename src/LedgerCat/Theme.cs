@@ -30,6 +30,8 @@ public static class Theme
     public static Color PinkDeep => Dark ? Color.FromArgb(122, 38, 56)   : Color.FromArgb(247, 168, 190);
     public static Color Good   => Dark ? Color.FromArgb(120, 180, 120) : Color.FromArgb(46, 120, 68);
     public static Color Danger => Dark ? Color.FromArgb(236, 122, 133) : Color.FromArgb(176, 32, 58);
+    // v1.2.5 (Dad): the light-green wash for a paid-up property row
+    public static Color GoodBg => Dark ? Color.FromArgb(42, 70, 50) : Color.FromArgb(214, 240, 219);
     public static Color GridLine => Dark ? Color.FromArgb(62, 56, 51)  : Color.FromArgb(221, 216, 207);
 
     public static readonly Font BaseFont = new Font("Segoe UI", 9.75f);

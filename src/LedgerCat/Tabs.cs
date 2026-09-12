@@ -64,6 +64,20 @@ public static class Ui
         };
     }
 
+    /// <summary>
+    /// v1.2.5 (Dad): clicking a highlighted (sole-selected) row again should let it go.
+    /// The clear is queued so it runs AFTER the grid's own mouse-down selection logic.
+    /// </summary>
+    public static void ClickAgainClears(DataGridView g)
+    {
+        g.CellMouseDown += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.Button != MouseButtons.Left) return;
+            if (g.Rows[e.RowIndex].Selected && g.SelectedRows.Count == 1)
+                g.BeginInvoke(new Action(g.ClearSelection));
+        };
+    }
+
     public static Panel TopBar(params Control[] buttons)
     {
         var p = new Panel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(12, 8, 12, 8) };
@@ -148,7 +162,15 @@ public class PropertiesTab : UserControl
 
         // v1.2.4 (Dad): column order for the front desk — who lives here, how to reach them, pets,
         // then what they owe right now (due day, this month's status, deposit), then the breakdown.
-        grid.Columns.Add(Ui.Col("Property", 200));
+        // v1.2.5 (Dad): the Property column is the stretcher now — a Fill column at the END made
+        // the horizontal scrollbar stop short of the notes box, so Notes became a plain fixed column.
+        grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Property",
+            Width = 200,
+            MinimumWidth = 200,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+        });
         grid.Columns.Add(Ui.Col("Tenant", 140));
         grid.Columns.Add(Ui.Col("Contact", 140));
         grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
@@ -162,11 +184,11 @@ public class PropertiesTab : UserControl
         grid.Columns.Add(Ui.Col("Lease ends", 100, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Days left", 80, DataGridViewContentAlignment.MiddleRight));
         // v1.2.4 (Dad): a little box that says "this property has notes — open Edit to read them"
+        // v1.2.5 (Dad): fixed width — the old Fill mode made scrolling right stop before it
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = "Notes",
-            Width = 60,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            Width = 70,
             ToolTipText = "📝 means this property has notes saved under Edit",
         });
 
@@ -194,6 +216,8 @@ public class PropertiesTab : UserControl
         Controls.Add(warnLabel);
 
         grid.CellDoubleClick += (_, _) => EditSelected();
+        Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
+        Ui.ClickAgainClears(delGrid);
 
         Ui.FullTextTips(grid);
         Ui.FullTextTips(delGrid);
@@ -310,7 +334,7 @@ public class PropertiesTab : UserControl
                     rentStatus = p.LateFee > 0 ? $"LATE (+{p.LateFee:0.##})" : "LATE";
                     late = true;
                 }
-                else rentStatus = $"Due day {p.DueDay}";
+                else rentStatus = Theme.Money(p.TotalRentDue); // v1.2.5 (Dad): show what's owed, not the due day
             }
 
             string pets = !p.PetsOk ? "No"
@@ -328,9 +352,16 @@ public class PropertiesTab : UserControl
                 p.LeaseNotes.Length > 0 ? "📝" : "");
             var row = grid.Rows[rowIdx];
             row.Tag = p.Id;
-            if (paid) row.Cells[5].Style.ForeColor = Theme.Good;
-            if (late) row.Cells[5].Style.ForeColor = Theme.Danger;
-            if (warn)
+            if (paid)
+            {
+                // v1.2.5 (Dad): a paid-up property glows light green across the whole row
+                row.Cells[5].Style.ForeColor = Theme.Good;
+                row.DefaultCellStyle.BackColor = Theme.GoodBg;
+                row.DefaultCellStyle.SelectionBackColor = Theme.Accent;
+                row.DefaultCellStyle.SelectionForeColor = Color.White;
+            }
+            else if (late) row.Cells[5].Style.ForeColor = Theme.Danger;
+            if (warn && !paid)
             {
                 // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
                 row.DefaultCellStyle.BackColor = expired ? Theme.PinkDeep : Theme.PinkBg;
@@ -386,16 +417,17 @@ public class MoneyTab : UserControl
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
 
         grid.Columns.Add(Ui.Col("Date", 100));
-        grid.Columns.Add(Ui.Col("Property", 180));
+        grid.Columns.Add(Ui.Col("Property", 180)); // v1.2.5: Property stretches instead of the Note column
+        grid.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        grid.Columns[1].MinimumWidth = 180;
         grid.Columns.Add(Ui.Col("Type", 80));
         grid.Columns.Add(Ui.Col("Category", 120));
         grid.Columns.Add(Ui.Col("Amount", 105, DataGridViewContentAlignment.MiddleRight));
-        // v1.2.4 (Dad): the note column is where comments live — let it stretch to fill the window
+        // v1.2.5 (Dad): fixed width — a Fill column at the end made the scrollbar stop short of it
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = "Note",
             Width = 240,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
         });
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
@@ -429,6 +461,8 @@ public class MoneyTab : UserControl
         Controls.Add(summary);
 
         grid.CellDoubleClick += (_, _) => EditSelected(); // edit, not delete — deletes are deliberate
+        Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
+        Ui.ClickAgainClears(delGrid);
 
         Ui.FullTextTips(grid);
         Ui.FullTextTips(delGrid);
@@ -605,17 +639,18 @@ public class RequestsTab : UserControl
         grid.Columns.Add(Ui.Col("Date", 95));
         grid.Columns.Add(Ui.Col("Property", 160));
         grid.Columns.Add(Ui.Col("Type", 100));
-        grid.Columns.Add(Ui.Col("Description", 230));
+        grid.Columns.Add(Ui.Col("Description", 230)); // v1.2.5: Description stretches instead of Notes
+        grid.Columns[3].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        grid.Columns[3].MinimumWidth = 230;
         grid.Columns.Add(Ui.Col("Contact", 130));
         grid.Columns.Add(Ui.Col("Handyman", 130));
         grid.Columns.Add(Ui.Col("Status", 85));
         grid.Columns.Add(Ui.Col("Retry later", 95));
-        // v1.2.4 (Dad): comments were squeezed into a narrow column — let Notes stretch to fill
+        // v1.2.5 (Dad): fixed width — a Fill column at the end made the scrollbar stop short of it
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = "Notes",
             Width = 220,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
         });
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
@@ -642,6 +677,8 @@ public class RequestsTab : UserControl
         Controls.Add(hint);
 
         grid.CellDoubleClick += (_, _) => EditSelected();
+        Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
+        Ui.ClickAgainClears(delGrid);
 
         Ui.FullTextTips(grid);
         Ui.FullTextTips(delGrid);

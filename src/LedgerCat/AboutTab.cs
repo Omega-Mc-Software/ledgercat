@@ -19,10 +19,18 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.4", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.5", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.5: paid is now a color — a tracked property whose rent came in for this " +
+                 "month glows light green across the whole row. The Rent this month column shows the amount " +
+                 "still owed instead of the due day (LATE + fee when it's past due). Recording rent on a late, " +
+                 "unpaid property now pre-fills the total INCLUDING the late fee, and says so in the note. The " +
+                 "lease-notes box finally got serious about width: it now spans the full dialog under its own " +
+                 "label (same for the money note and request notes boxes). Clicking a highlighted row again " +
+                 "lets it go. And scrolling right no longer stops short of the notes column.", muted: true);
 
         Add(tlp, "New in v1.2.4: the Import/Export tab came back from the dead — its buttons looked fine " +
                  "but were never wired to anything (my fault, and thank you Dad for catching it). Properties " +

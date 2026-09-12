@@ -91,9 +91,15 @@ public class PropertyDialog : Form
         AddRow(tlp, "Pet deposit $", petDepT);
         AddRow(tlp, "Rent tracking", trackRentC);
         AddRow(tlp, "Late fee $", lateFeeT);
-        AddRow(tlp, "Lease / move notes", notesT);
 
-        tlp.Controls.Add(totalLbl, 1, 16);
+        // v1.2.5 (Dad): the notes box kept hugging the label column — now it gets the whole
+        // dialog width, with its label on its own line above it.
+        var notesLbl = new Label { Text = "Lease / move notes", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
+        tlp.Controls.Add(notesLbl, 0, 16);
+        tlp.Controls.Add(notesT, 0, 17);
+        tlp.SetColumnSpan(notesT, 2);
+
+        tlp.Controls.Add(totalLbl, 1, 15);
 
         var hint = new Label
         {
@@ -107,7 +113,7 @@ public class PropertyDialog : Form
             // long line that the dialog clips. This makes it wrap onto several lines instead.
             MaximumSize = new Size(400, 0),
         };
-        tlp.Controls.Add(hint, 0, 17);
+        tlp.Controls.Add(hint, 0, 18);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
@@ -281,7 +287,7 @@ public class TxnDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(420, 360);
+        ClientSize = new Size(420, 388);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Date ?? Ui.Today();
@@ -327,7 +333,12 @@ public class TxnDialog : Form
         AddRow(tlp, "Property", propC);
         AddRow(tlp, "Category", catT);
         AddRow(tlp, "Amount $ *", amountT);
-        AddRow(tlp, "Note", noteT);
+
+        // v1.2.5 (Dad): note box gets the whole dialog width, label above it
+        var noteLbl = new Label { Text = "Note", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
+        tlp.Controls.Add(noteLbl, 0, 4);
+        tlp.Controls.Add(noteT, 0, 5);
+        tlp.SetColumnSpan(noteT, 2);
 
         var catHint = new Label
         {
@@ -339,7 +350,8 @@ public class TxnDialog : Form
             ForeColor = Theme.Muted,
             MaximumSize = new Size(270, 0), // v1.2.4: wrap instead of getting clipped
         };
-        tlp.Controls.Add(catHint, 1, 5);
+        tlp.Controls.Add(catHint, 0, 6);
+        tlp.SetColumnSpan(catHint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
         var cancel = Ui.Btn("Cancel", 100, (_, _) => DialogResult = DialogResult.Cancel);
@@ -363,8 +375,21 @@ public class TxnDialog : Form
     {
         if (existing != null || kind != "rent" || propC.SelectedIndex <= 0) return;
         var p = props[propC.SelectedIndex - 1];
-        if (p.TotalRentDue > 0 && !touchedAmount && amountT.Text.Length == 0)
-            amountT.Text = p.TotalRentDue.ToString("0.##");
+        decimal amount = p.TotalRentDue;
+        // v1.2.5 (Dad): past-due and unpaid means the suggestion includes the late fee
+        if (p.TrackRent && p.TotalRentDue > 0 && p.LateFee > 0 && DateTime.Today.Day > p.DueDay)
+        {
+            string mk = DateTime.Today.ToString("yyyy-MM");
+            bool paidAlready = Db.ListTxns().Any(t =>
+                t.Kind == "rent" && t.PropertyId == p.Id && t.Date.StartsWith(mk));
+            if (!paidAlready)
+            {
+                amount += p.LateFee;
+                if (noteT.Text.Length == 0) noteT.Text = $"includes {p.LateFee:0.##} late fee";
+            }
+        }
+        if (amount > 0 && !touchedAmount && amountT.Text.Length == 0)
+            amountT.Text = amount.ToString("0.##");
         if (!touchedCat && catT.Text.Length == 0)
             catT.Text = DateTime.Today.ToString("MMMM", CultureInfo.InvariantCulture);
     }
@@ -446,7 +471,7 @@ public class ReqDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(440, 650);
+        ClientSize = new Size(440, 678);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Created ?? Ui.Today();
@@ -496,7 +521,12 @@ public class ReqDialog : Form
         AddRow(tlp, "Handyman name", handyNameT);
         AddRow(tlp, "Handyman phone", handyPhoneT);
         AddRow(tlp, "Retry later", retryT);
-        AddRow(tlp, "Notes / comments", notesT);
+
+        // v1.2.5 (Dad): notes box gets the whole dialog width, label above it
+        var notesLbl = new Label { Text = "Notes / comments", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
+        tlp.Controls.Add(notesLbl, 0, 10);
+        tlp.Controls.Add(notesT, 0, 11);
+        tlp.SetColumnSpan(notesT, 2);
 
         var hint = new Label
         {
@@ -507,7 +537,7 @@ public class ReqDialog : Form
             ForeColor = Theme.Muted,
             MaximumSize = new Size(400, 0), // v1.2.4: wrap instead of getting clipped
         };
-        tlp.Controls.Add(hint, 0, 11);
+        tlp.Controls.Add(hint, 0, 12);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
