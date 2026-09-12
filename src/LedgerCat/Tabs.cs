@@ -146,19 +146,29 @@ public class PropertiesTab : UserControl
         var recRent = Ui.Btn("Record rent", 120, (_, _) => RecordRentForSelected());
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
 
+        // v1.2.4 (Dad): column order for the front desk — who lives here, how to reach them, pets,
+        // then what they owe right now (due day, this month's status, deposit), then the breakdown.
         grid.Columns.Add(Ui.Col("Property", 200));
         grid.Columns.Add(Ui.Col("Tenant", 140));
         grid.Columns.Add(Ui.Col("Contact", 140));
+        grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Due day", 70, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Rent this month", 110, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Security dep", 95, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Rent", 85, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Pet fee", 80, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Late fee", 80, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Total due/mo", 95, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Due day", 70, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Rent this month", 110, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Security dep", 95, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Lease ends", 100, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Days left", 80, DataGridViewContentAlignment.MiddleRight));
+        // v1.2.4 (Dad): a little box that says "this property has notes — open Edit to read them"
+        grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Notes",
+            Width = 60,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            ToolTipText = "📝 means this property has notes saved under Edit",
+        });
 
         delGrid.Columns.Add(Ui.Col("Property", 220));
         delGrid.Columns.Add(Ui.Col("Tenant", 160));
@@ -307,19 +317,19 @@ public class PropertiesTab : UserControl
                 : p.PetCount > 0 ? $"Yes ({p.PetCount})"
                 : "Yes";
 
-            var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact,
+            var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact, pets,
+                p.DueDay.ToString(), rentStatus,
+                p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
                 Theme.Money(p.Rent),
                 p.PetRent > 0 ? Theme.Money(p.PetRent) : "—",
                 p.LateFee > 0 ? Theme.Money(p.LateFee) : "—",
                 Theme.Money(p.TotalRentDue),
-                p.DueDay.ToString(),
-                rentStatus,
-                p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
-                pets, lease, days);
+                lease, days,
+                p.LeaseNotes.Length > 0 ? "📝" : "");
             var row = grid.Rows[rowIdx];
             row.Tag = p.Id;
-            if (paid) row.Cells[8].Style.ForeColor = Theme.Good;
-            if (late) row.Cells[8].Style.ForeColor = Theme.Danger;
+            if (paid) row.Cells[5].Style.ForeColor = Theme.Good;
+            if (late) row.Cells[5].Style.ForeColor = Theme.Danger;
             if (warn)
             {
                 // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
@@ -380,7 +390,13 @@ public class MoneyTab : UserControl
         grid.Columns.Add(Ui.Col("Type", 80));
         grid.Columns.Add(Ui.Col("Category", 120));
         grid.Columns.Add(Ui.Col("Amount", 105, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Note", 240));
+        // v1.2.4 (Dad): the note column is where comments live — let it stretch to fill the window
+        grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Note",
+            Width = 240,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+        });
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
         delGrid.Columns.Add(Ui.Col("Property", 180));
@@ -594,7 +610,13 @@ public class RequestsTab : UserControl
         grid.Columns.Add(Ui.Col("Handyman", 130));
         grid.Columns.Add(Ui.Col("Status", 85));
         grid.Columns.Add(Ui.Col("Retry later", 95));
-        grid.Columns.Add(Ui.Col("Notes", 220));
+        // v1.2.4 (Dad): comments were squeezed into a narrow column — let Notes stretch to fill
+        grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Notes",
+            Width = 220,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+        });
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
         delGrid.Columns.Add(Ui.Col("Property", 170));

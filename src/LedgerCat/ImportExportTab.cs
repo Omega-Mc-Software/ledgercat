@@ -129,13 +129,14 @@ public class ImportExportTab : UserControl
         MaximumSize = new Size(760, 0),
     };
 
-    static Button Btn(string text, int width, EventHandler onClick) => new()
+    // v1.2.4 (Dad, MAJOR): the click handler was passed in and never wired up — an event can't be
+    // assigned inside an object initializer, so every Import/Export button was dead. Wired now.
+    static Button Btn(string text, int width, EventHandler onClick)
     {
-        Text = text,
-        Width = width,
-        Height = 34,
-        Margin = new Padding(0, 2, 0, 2),
-    };
+        var b = new Button { Text = text, Width = width, Height = 34, Margin = new Padding(0, 2, 0, 2) };
+        b.Click += onClick;
+        return b;
+    }
 
     static Label Spacer() => new() { Height = 10, Width = 10, Margin = new Padding(0) };
 

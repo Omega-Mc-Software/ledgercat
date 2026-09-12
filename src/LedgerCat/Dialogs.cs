@@ -27,7 +27,7 @@ public class PropertyDialog : Form
     readonly TextBox petDepT = new() { Width = 240 };
     readonly CheckBox trackRentC = new() { Text = "Watch this property's rent (due day + late fee)", AutoSize = true, Checked = true };
     readonly TextBox lateFeeT = new() { Width = 240 };
-    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 56 };
+    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 80 };
     readonly Label totalLbl = new() { AutoSize = true, ForeColor = Theme.Muted };
 
     public PropertyDialog(Property? existing)
@@ -37,7 +37,7 @@ public class PropertyDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(410, 700);
+        ClientSize = new Size(440, 720);
         Font = Theme.BaseFont;
 
         if (existing != null)
@@ -103,6 +103,9 @@ public class PropertyDialog : Form
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
+            // v1.2.4 (Dad): tips were cut off — an AutoSize label without a maximum width is one
+            // long line that the dialog clips. This makes it wrap onto several lines instead.
+            MaximumSize = new Size(400, 0),
         };
         tlp.Controls.Add(hint, 0, 17);
         tlp.SetColumnSpan(hint, 2);
@@ -255,7 +258,7 @@ public class TxnDialog : Form
     readonly ComboBox propC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
     readonly TextBox catT = new() { Width = 240 };
     readonly TextBox amountT = new() { Width = 240 };
-    readonly TextBox noteT = new() { Width = 240 };
+    readonly TextBox noteT = new() { Width = 240, Multiline = true, Height = 64 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
     readonly Txn? existing;
@@ -278,7 +281,7 @@ public class TxnDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(380, 280);
+        ClientSize = new Size(420, 360);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Date ?? Ui.Today();
@@ -334,6 +337,7 @@ public class TxnDialog : Form
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
+            MaximumSize = new Size(270, 0), // v1.2.4: wrap instead of getting clipped
         };
         tlp.Controls.Add(catHint, 1, 5);
 
@@ -420,14 +424,14 @@ public class ReqDialog : Form
     readonly TextBox dateT = new() { Width = 240 };
     readonly ComboBox propC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox kindC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
-    readonly TextBox descT = new() { Width = 240, Multiline = true, Height = 60 };
+    readonly TextBox descT = new() { Width = 240, Multiline = true, Height = 70 };
     readonly TextBox contactNameT = new() { Width = 240 };
     readonly TextBox contactPhoneT = new() { Width = 240 };
     readonly TextBox companyT = new() { Width = 240 };
     readonly TextBox handyNameT = new() { Width = 240 };
     readonly TextBox handyPhoneT = new() { Width = 240 };
     readonly TextBox retryT = new() { Width = 240 };
-    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 56 };
+    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 80 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
 
@@ -442,7 +446,7 @@ public class ReqDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(400, 590);
+        ClientSize = new Size(440, 650);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Created ?? Ui.Today();
@@ -501,6 +505,7 @@ public class ReqDialog : Form
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
+            MaximumSize = new Size(400, 0), // v1.2.4: wrap instead of getting clipped
         };
         tlp.Controls.Add(hint, 0, 11);
         tlp.SetColumnSpan(hint, 2);

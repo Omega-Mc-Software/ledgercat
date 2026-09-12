@@ -19,10 +19,17 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.2", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.4", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.4: the Import/Export tab came back from the dead — its buttons looked fine " +
+                 "but were never wired to anything (my fault, and thank you Dad for catching it). Properties " +
+                 "columns reordered for the front desk: tenant, contact, pets, due day and this month's rent " +
+                 "up front, the breakdown after. A 📝 at the end of a row means the property has notes under " +
+                 "Edit. The tip lines in the add/edit dialogs no longer cut off mid-sentence, and the note and " +
+                 "comment boxes are bigger — including in the money and requests lists themselves.", muted: true);
 
         Add(tlp, "New in v1.2.2: crash fix — adding or editing a property crashed with an " +
                  "ArgumentOutOfRangeException (a column-reading mix-up in the database layer), and pet " +

@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>LedgerCat</AssemblyName>
     <RootNamespace>LedgerCat</RootNamespace>
-    <Version>1.2.3</Version>
+    <Version>1.2.4</Version>
     <Product>LedgerCat</Product>
     <Authors>Neko Omega</Authors>
     <Description>Small-landlord bookkeeping that stays small.</Description>
