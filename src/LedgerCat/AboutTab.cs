@@ -19,10 +19,14 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.6", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.7", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.7: every tab now reloads the moment you switch to it — record rent on the " +
+                 "Money tab and the property page shows Paid ✓ (and the green glow) as soon as you click " +
+                 "over, no edit or reopen needed.", muted: true);
 
         Add(tlp, "New in v1.2.6: the Rent this month column now shows the actual number on late rows — " +
                  "LATE $3 (+$2 fee) instead of a bare LATE, so the amount due with the late fee is right " +

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace LedgerCat;
@@ -6,6 +7,7 @@ namespace LedgerCat;
 public class MainForm : Form
 {
     readonly TabControl tabs = new() { Dock = DockStyle.Fill };
+    readonly Dictionary<TabPage, Action> tabRefresh = new();
     readonly PropertiesTab propsTab = new();
     readonly MoneyTab moneyTab = new();
     readonly RequestsTab reqTab = new();
@@ -24,7 +26,7 @@ public class MainForm : Form
 
     public MainForm()
     {
-        Text = "LedgerCat v1.2.6 — by Neko Omega";
+        Text = "LedgerCat v1.2.7 — by Neko Omega";
         Width = 1120;
         Height = 720;
         MinimumSize = new System.Drawing.Size(900, 600);
@@ -46,6 +48,14 @@ public class MainForm : Form
         Controls.Add(tabs);
         Controls.Add(top);
 
+        // v1.2.7 (Dad): a tab always shows the freshest data — recording rent on the Money tab
+        // now updates the Properties page the moment you switch over, no edit/reopen needed
+        tabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (tabs.SelectedTab != null && tabRefresh.TryGetValue(tabs.SelectedTab, out var refresh))
+                refresh();
+        };
+
         ioTab.DataChanged += RefreshAll;
         Theme.Changed += ApplyTheme;
 
@@ -62,6 +72,9 @@ public class MainForm : Form
         var page = new TabPage(titleText);
         page.Controls.Add(uc);
         tabs.TabPages.Add(page);
+        if (uc is PropertiesTab p) tabRefresh[page] = p.RefreshData;
+        else if (uc is MoneyTab m) tabRefresh[page] = m.RefreshData;
+        else if (uc is RequestsTab r) tabRefresh[page] = r.RefreshData;
     }
 
     void RefreshAll()
