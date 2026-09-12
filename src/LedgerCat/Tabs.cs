@@ -41,6 +41,29 @@ public static class Ui
             NumberStyles.Float, CultureInfo.InvariantCulture, out v) && v > 0;
     }
 
+    /// Like ParseMoney but empty means 0 — for optional money fields (deposits, late fees).
+    public static bool ParseMoneyOrZero(string? s, out decimal v)
+    {
+        v = 0;
+        if (string.IsNullOrWhiteSpace(s)) return true;
+        if (!decimal.TryParse(s.Trim().Replace("$", "").Replace(",", ""),
+            NumberStyles.Float, CultureInfo.InvariantCulture, out v)) return false;
+        return v >= 0;
+    }
+
+    /// <summary>
+    /// v1.2.1: full-text cell tooltips. DataGridView's built-in tooltip only appears on truncated cells
+    /// and clips long text; this always shows the complete cell content.
+    /// </summary>
+    public static void FullTextTips(DataGridView g)
+    {
+        g.CellToolTipTextNeeded += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
+                e.ToolTipText = g.Rows[e.RowIndex].Cells[e.ColumnIndex].FormattedValue.ToString() ?? "";
+        };
+    }
+
     public static Panel TopBar(params Control[] buttons)
     {
         var p = new Panel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(12, 8, 12, 8) };
@@ -120,26 +143,33 @@ public class PropertiesTab : UserControl
 
         var add = Ui.Btn("Add property", 120, (_, _) => Edit(null));
         var editB = Ui.Btn("Edit", 80, (_, _) => EditSelected());
+        var recRent = Ui.Btn("Record rent", 120, (_, _) => RecordRentForSelected());
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
 
         grid.Columns.Add(Ui.Col("Property", 200));
         grid.Columns.Add(Ui.Col("Tenant", 140));
         grid.Columns.Add(Ui.Col("Contact", 140));
-        grid.Columns.Add(Ui.Col("Rent / month", 105, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Due day", 75, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Rent", 85, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Pet fee", 80, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Late fee", 80, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Total due/mo", 95, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Due day", 70, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Rent this month", 110, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Security dep", 95, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Lease ends", 100, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Days left", 80, DataGridViewContentAlignment.MiddleRight));
 
         delGrid.Columns.Add(Ui.Col("Property", 220));
         delGrid.Columns.Add(Ui.Col("Tenant", 160));
-        delGrid.Columns.Add(Ui.Col("Rent / month", 110, DataGridViewContentAlignment.MiddleRight));
+        delGrid.Columns.Add(Ui.Col("Total due/mo", 100, DataGridViewContentAlignment.MiddleRight));
         delGrid.Columns.Add(Ui.Col("Lease ends", 110, DataGridViewContentAlignment.MiddleRight));
 
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
         var undoAll = Ui.Btn("Undo all", 100, (_, _) => UndoAll());
         var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
 
-        var bar = Ui.TopBar(va, vd, add, editB, del, undo, undoAll, purge);
+        var bar = Ui.TopBar(va, vd, add, editB, recRent, del, undo, undoAll, purge);
         // hide deleted-view actions until that view is open
         foreach (var c in new[] { undo, undoAll, purge }) c.Visible = false;
         va.Click += (_, _) => SetViewButtons(false);
@@ -155,6 +185,22 @@ public class PropertiesTab : UserControl
         Controls.Add(warnLabel);
 
         grid.CellDoubleClick += (_, _) => EditSelected();
+
+        Ui.FullTextTips(grid);
+        Ui.FullTextTips(delGrid);
+    }
+
+    void RecordRentForSelected()
+    {
+        if (Ui.SelectedId(grid) is not long id) return;
+        var p = Db.ListProps().FirstOrDefault(x => x.Id == id);
+        if (p == null) return;
+        using var dlg = new TxnDialog("rent", Db.ListProps(), null, p);
+        if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.T != null)
+        {
+            Db.SaveTxn(dlg.T);
+            RefreshData();
+        }
     }
 
     void SetViewButtons(bool deletedView)
@@ -224,6 +270,13 @@ public class PropertiesTab : UserControl
         grid.Rows.Clear();
         int soon = 0;
         var today = DateTime.Today;
+        string monthKey = today.ToString("yyyy-MM");
+
+        // v1.2.1: rent tracking — which properties already have a rent entry for the current month
+        var paidIds = Db.ListTxns()
+            .Where(t => t.Kind == "rent" && t.PropertyId != null && t.Date.StartsWith(monthKey))
+            .Select(t => t.PropertyId!.Value)
+            .ToHashSet();
 
         foreach (var p in Db.ListProps())
         {
@@ -241,10 +294,38 @@ public class PropertiesTab : UserControl
             string contact = p.ContactPhone.Length > 0
                 ? (p.ContactName.Length > 0 ? $"{p.ContactName} · {p.ContactPhone}" : p.ContactPhone)
                 : p.ContactName;
-            var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact, Theme.Money(p.Rent),
-                p.DueDay.ToString(), lease, days);
+
+            // rent status for the current month (only when the property asks to be tracked)
+            string rentStatus = "—";
+            bool late = false, paid = false;
+            if (p.TrackRent && p.TotalRentDue > 0)
+            {
+                if (paidIds.Contains(p.Id)) { rentStatus = "Paid ✓"; paid = true; }
+                else if (today.Day > p.DueDay)
+                {
+                    rentStatus = p.LateFee > 0 ? $"LATE (+{p.LateFee:0.##})" : "LATE";
+                    late = true;
+                }
+                else rentStatus = $"Due day {p.DueDay}";
+            }
+
+            string pets = !p.PetsOk ? "No"
+                : p.PetCount > 0 ? $"Yes ({p.PetCount})"
+                : "Yes";
+
+            var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact,
+                Theme.Money(p.Rent),
+                p.PetRent > 0 ? Theme.Money(p.PetRent) : "—",
+                p.LateFee > 0 ? Theme.Money(p.LateFee) : "—",
+                Theme.Money(p.TotalRentDue),
+                p.DueDay.ToString(),
+                rentStatus,
+                p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
+                pets, lease, days);
             var row = grid.Rows[rowIdx];
             row.Tag = p.Id;
+            if (paid) row.Cells[8].Style.ForeColor = Theme.Good;
+            if (late) row.Cells[8].Style.ForeColor = Theme.Danger;
             if (warn)
             {
                 // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
@@ -265,7 +346,7 @@ public class PropertiesTab : UserControl
         delGrid.Rows.Clear();
         foreach (var p in Db.ListProps(deleted: true))
         {
-            var rowIdx = delGrid.Rows.Add(p.Label, p.Tenant, Theme.Money(p.Rent), p.LeaseEnd);
+            var rowIdx = delGrid.Rows.Add(p.Label, p.Tenant, Theme.Money(p.TotalRentDue), p.LeaseEnd);
             delGrid.Rows[rowIdx].Tag = p.Id;
         }
         delGrid.ResumeLayout();
@@ -339,6 +420,9 @@ public class MoneyTab : UserControl
         Controls.Add(summary);
 
         grid.CellDoubleClick += (_, _) => EditSelected(); // edit, not delete — deletes are deliberate
+
+        Ui.FullTextTips(grid);
+        Ui.FullTextTips(delGrid);
     }
 
     void SetViewButtons(bool deletedView)
@@ -521,12 +605,15 @@ public class RequestsTab : UserControl
         grid.Columns.Add(Ui.Col("Contact", 130));
         grid.Columns.Add(Ui.Col("Handyman", 130));
         grid.Columns.Add(Ui.Col("Status", 85));
+        grid.Columns.Add(Ui.Col("Retry later", 95));
+        grid.Columns.Add(Ui.Col("Notes", 220));
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
         delGrid.Columns.Add(Ui.Col("Property", 170));
         delGrid.Columns.Add(Ui.Col("Type", 100));
         delGrid.Columns.Add(Ui.Col("Description", 280));
         delGrid.Columns.Add(Ui.Col("Status", 85));
+        delGrid.Columns.Add(Ui.Col("Notes", 200));
 
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
         var undoAll = Ui.Btn("Undo all", 100, (_, _) => UndoAll());
@@ -546,6 +633,9 @@ public class RequestsTab : UserControl
         Controls.Add(hint);
 
         grid.CellDoubleClick += (_, _) => EditSelected();
+
+        Ui.FullTextTips(grid);
+        Ui.FullTextTips(delGrid);
     }
 
     void SetViewButtons(bool deletedView)
@@ -581,6 +671,7 @@ public class RequestsTab : UserControl
         {
             dlg.Q.Id = q.Id;
             dlg.Q.Status = q.Status;
+            dlg.Q.CancelReason = q.CancelReason; // kept from the cancel popup; edited status only via Open/Done / Cancel req
             Db.SaveReq(dlg.Q);
             RefreshData();
         }
@@ -602,13 +693,16 @@ public class RequestsTab : UserControl
         if (q == null) return;
         if (q.Status == "canceled")
         {
-            Db.SetReqStatus(id, "open"); // un-cancel
+            Db.SetReqStatus(id, "open"); // un-cancel (cancel reason stays on the request)
         }
         else
         {
-            if (MessageBox.Show("Mark this request as canceled?\n\nIt stays on the list (so you remember why) but nothing waits on it.",
-                    "Cancel request", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            Db.SetReqStatus(id, "canceled");
+            // v1.2.1: canceling asks why — the reason shows in the Notes column
+            using var dlg = new CancelDialog(q.Description);
+            if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+            q.Status = "canceled";
+            q.CancelReason = dlg.Reason;
+            Db.SaveReq(q);
         }
         RefreshData();
     }
@@ -666,7 +760,9 @@ public class RequestsTab : UserControl
                 q.Description,
                 ContactCell(q.ContactName, q.ContactPhone),
                 ContactCell(q.HandymanName, q.HandymanPhone),
-                status);
+                status,
+                q.RetryLater,
+                NotesCell(q));
             var row = grid.Rows[rowIdx];
             row.Tag = q.Id;
             if (q.Status == "open")
@@ -688,7 +784,7 @@ public class RequestsTab : UserControl
             };
             var rowIdx = delGrid.Rows.Add(q.Created, q.PropLabel,
                 q.Kind == "viewing" ? "Viewing" : "Maintenance",
-                q.Description, status);
+                q.Description, status, NotesCell(q));
             delGrid.Rows[rowIdx].Tag = q.Id;
         }
         delGrid.ResumeLayout();
@@ -698,5 +794,14 @@ public class RequestsTab : UserControl
             : "Nothing open. Purr.";
 
         viewDeletedBtn.Text = $"Deleted ({Db.ListReqsDeleted().Count})";
+    }
+
+    static string NotesCell(Req q)
+    {
+        var notes = q.Notes;
+        if (q.Status == "canceled" && q.CancelReason.Length > 0)
+            notes = notes.Length > 0 ? notes + " · Cancel reason: " + q.CancelReason
+                                     : "Cancel reason: " + q.CancelReason;
+        return notes;
     }
 }

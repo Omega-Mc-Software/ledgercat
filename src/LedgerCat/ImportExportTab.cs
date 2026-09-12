@@ -38,6 +38,10 @@ public class ImportExportTab : UserControl
         public string contact_name = "", contact_phone = "", state_id = "", lease_notes = "";
         public decimal rent;
         public int due_day = 1;
+        public bool pets_ok;
+        public int pet_count;
+        public decimal pet_rent, pet_deposit, security_deposit, late_fee;
+        public bool track_rent = true;
     }
 
     class TxnRow
@@ -52,6 +56,7 @@ public class ImportExportTab : UserControl
         public string created = "", kind = "maintenance", description = "", status = "open";
         public string contact_name = "", contact_phone = "", company = "";
         public string handyman_name = "", handyman_phone = "";
+        public string cancel_reason = "", retry_later = "", notes = "";
         public long? property_id;
         public bool done;
     }
@@ -93,8 +98,21 @@ public class ImportExportTab : UserControl
         flow.Add(dbLabel);
         flow.Add(Btn("Open data folder", 260, (_, _) =>
         {
-            try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + Db.DbPath + "\""); }
-            catch { MessageBox.Show("Data folder: " + Db.DataDir, "LedgerCat"); }
+            try
+            {
+                // v1.2.1 fix: UseShellExecute is required for explorer.exe /select to actually show the file.
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = "/select,\"" + Db.DbPath + "\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = Db.DataDir, UseShellExecute = true }); }
+                catch { MessageBox.Show("Data folder: " + Db.DataDir, "LedgerCat"); }
+            }
         }));
 
         Controls.Add(flow);
@@ -128,9 +146,9 @@ public class ImportExportTab : UserControl
         ["transactions"] = ("Transactions CSV|*.csv",
             new[] { "date", "property", "kind", "category", "amount", "note" }, "transactions"),
         ["properties"] = ("Properties CSV|*.csv",
-            new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "due_day", "lease_end", "lease_notes" }, "properties"),
+            new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "pet_rent", "late_fee", "due_day", "security_deposit", "pets_ok", "pet_count", "pet_deposit", "track_rent", "lease_end", "lease_notes" }, "properties"),
         ["requests"] = ("Requests CSV|*.csv",
-            new[] { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone" }, "requests"),
+            new[] { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone", "retry_later", "notes", "cancel_reason" }, "requests"),
     };
 
     void ImportCsv(string kindKey)
@@ -255,10 +273,34 @@ public class ImportExportTab : UserControl
             return false; // already exists
 
         var rent = cRent >= 0 ? ParseAmountCell(Cell(r, cRent)) ?? 0m : 0m;
+        var petRent = Csv.FindCol(header, "pet_rent") is { } cPR && cPR >= 0 ? ParseAmountCell(Cell(r, cPR)) ?? 0m : 0m;
+        var lateFee = Csv.FindCol(header, "late_fee") is { } cLF && cLF >= 0 ? ParseAmountCell(Cell(r, cLF)) ?? 0m : 0m;
+        var secDep = Csv.FindCol(header, "security_deposit") is { } cSD && cSD >= 0 ? ParseAmountCell(Cell(r, cSD)) ?? 0m : 0m;
+        var petDep = Csv.FindCol(header, "pet_deposit") is { } cPD && cPD >= 0 ? ParseAmountCell(Cell(r, cPD)) ?? 0m : 0m;
         var lease = cLease >= 0 ? Cell(r, cLease).Trim() : "";
         if (lease.Length > 0 && !Ui.ParseDate(lease, out var ld)) lease = "";
         int due = 1;
         if (cDue >= 0 && int.TryParse(Cell(r, cDue), out var dd) && dd >= 1 && dd <= 28) due = dd;
+
+        bool petsOk = false;
+        int petCount = 0;
+        var cPets = Csv.FindCol(header, "pets_ok");
+        if (cPets >= 0)
+        {
+            var raw = Cell(r, cPets).Trim().ToLowerInvariant();
+            petsOk = raw is "1" or "yes" or "true" or "y";
+        }
+        var cPetCount = Csv.FindCol(header, "pet_count");
+        if (cPetCount >= 0 && int.TryParse(Cell(r, cPetCount), out var pc) && pc > 0) petCount = pc;
+        if (petCount > 0) petsOk = true;
+
+        bool trackRent = true;
+        var cTrack = Csv.FindCol(header, "track_rent");
+        if (cTrack >= 0)
+        {
+            var raw = Cell(r, cTrack).Trim().ToLowerInvariant();
+            if (raw is "0" or "no" or "false" or "n") trackRent = false;
+        }
 
         var np = new Property
         {
@@ -272,6 +314,13 @@ public class ImportExportTab : UserControl
             DueDay = due,
             LeaseEnd = lease,
             LeaseNotes = cLeaseNotes >= 0 ? Cell(r, cLeaseNotes).Trim() : "",
+            PetsOk = petsOk,
+            PetCount = petCount,
+            PetRent = petRent,
+            PetDeposit = petDep,
+            SecurityDeposit = secDep,
+            TrackRent = trackRent,
+            LateFee = lateFee,
         };
         np.Id = Db.SaveProp(np);
         props.Add(np);
@@ -290,6 +339,9 @@ public class ImportExportTab : UserControl
         int cCompany = Csv.FindCol(header, "company");
         int cHandyName = Csv.FindCol(header, "handyman_name");
         int cHandyPhone = Csv.FindCol(header, "handyman_phone");
+        int cRetry = Csv.FindCol(header, "retry_later");
+        int cNotes = Csv.FindCol(header, "notes");
+        int cCancel = Csv.FindCol(header, "cancel_reason");
         if (cDate < 0 || cDesc < 0) return false;
 
         if (!Ui.ParseDate(Cell(r, cDate).Trim(), out var d)) return false;
@@ -318,6 +370,9 @@ public class ImportExportTab : UserControl
             Company = cCompany >= 0 ? Cell(r, cCompany).Trim() : "",
             HandymanName = cHandyName >= 0 ? Cell(r, cHandyName).Trim() : "",
             HandymanPhone = cHandyPhone >= 0 ? Cell(r, cHandyPhone).Trim() : "",
+            RetryLater = cRetry >= 0 ? Cell(r, cRetry).Trim() : "",
+            Notes = cNotes >= 0 ? Cell(r, cNotes).Trim() : "",
+            CancelReason = cCancel >= 0 ? Cell(r, cCancel).Trim() : "",
         });
         return true;
     }
@@ -346,16 +401,25 @@ public class ImportExportTab : UserControl
                     sb.AppendLine(Csv.Row(t.Date, t.PropLabel, t.Kind, t.Category, t.Amount.ToString("0.##", CultureInfo.InvariantCulture), t.Note));
                 break;
             case "properties":
-                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,due_day,lease_end,lease_notes");
+                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,pet_rent,late_fee,due_day,security_deposit,pets_ok,pet_count,pet_deposit,track_rent,lease_end,lease_notes");
                 foreach (var p in Db.ListProps())
                     sb.AppendLine(Csv.Row(p.Name, p.Unit, p.Tenant, p.ContactName, p.ContactPhone, p.StateId,
-                        p.Rent.ToString("0.##", CultureInfo.InvariantCulture), p.DueDay, p.LeaseEnd, p.LeaseNotes));
+                        p.Rent.ToString("0.##", CultureInfo.InvariantCulture),
+                        p.PetRent.ToString("0.##", CultureInfo.InvariantCulture),
+                        p.LateFee.ToString("0.##", CultureInfo.InvariantCulture),
+                        p.DueDay,
+                        p.SecurityDeposit.ToString("0.##", CultureInfo.InvariantCulture),
+                        p.PetsOk ? "yes" : "no", p.PetCount,
+                        p.PetDeposit.ToString("0.##", CultureInfo.InvariantCulture),
+                        p.TrackRent ? "yes" : "no",
+                        p.LeaseEnd, p.LeaseNotes));
                 break;
             case "requests":
-                sb.AppendLine("created,property,kind,description,status,contact_name,contact_phone,company,handyman_name,handyman_phone");
+                sb.AppendLine("created,property,kind,description,status,contact_name,contact_phone,company,handyman_name,handyman_phone,retry_later,notes,cancel_reason");
                 foreach (var q in Db.ListReqs())
                     sb.AppendLine(Csv.Row(q.Created, q.PropLabel, q.Kind, q.Description, q.Status,
-                        q.ContactName, q.ContactPhone, q.Company, q.HandymanName, q.HandymanPhone));
+                        q.ContactName, q.ContactPhone, q.Company, q.HandymanName, q.HandymanPhone,
+                        q.RetryLater, q.Notes, q.CancelReason));
                 break;
         }
 
@@ -384,6 +448,9 @@ public class ImportExportTab : UserControl
                 contact_name = p.ContactName, contact_phone = p.ContactPhone,
                 state_id = p.StateId, lease_notes = p.LeaseNotes,
                 rent = p.Rent, due_day = p.DueDay, lease_end = p.LeaseEnd,
+                pets_ok = p.PetsOk, pet_count = p.PetCount,
+                pet_rent = p.PetRent, pet_deposit = p.PetDeposit,
+                security_deposit = p.SecurityDeposit, track_rent = p.TrackRent, late_fee = p.LateFee,
             });
         foreach (var t in Db.ListTxns())
             backup.transactions.Add(new TxnRow
@@ -398,6 +465,7 @@ public class ImportExportTab : UserControl
                 description = q.Description, status = q.Status, done = q.Done,
                 contact_name = q.ContactName, contact_phone = q.ContactPhone,
                 company = q.Company, handyman_name = q.HandymanName, handyman_phone = q.HandymanPhone,
+                cancel_reason = q.CancelReason, retry_later = q.RetryLater, notes = q.Notes,
             });
 
         File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(backup, JsonOpts));
@@ -434,6 +502,9 @@ public class ImportExportTab : UserControl
                     ContactName = p.contact_name, ContactPhone = p.contact_phone,
                     StateId = p.state_id, LeaseNotes = p.lease_notes,
                     Rent = p.rent, DueDay = p.due_day, LeaseEnd = p.lease_end,
+                    PetsOk = p.pets_ok, PetCount = p.pet_count,
+                    PetRent = p.pet_rent, PetDeposit = p.pet_deposit,
+                    SecurityDeposit = p.security_deposit, TrackRent = p.track_rent, LateFee = p.late_fee,
                 };
                 np.Id = Db.SaveProp(np);
                 idMap[p.id] = np.Id;
@@ -458,6 +529,7 @@ public class ImportExportTab : UserControl
                     Description = q.description, Status = q.status,
                     ContactName = q.contact_name, ContactPhone = q.contact_phone,
                     Company = q.company, HandymanName = q.handyman_name, HandymanPhone = q.handyman_phone,
+                    CancelReason = q.cancel_reason, RetryLater = q.retry_later, Notes = q.notes,
                 });
             }
 

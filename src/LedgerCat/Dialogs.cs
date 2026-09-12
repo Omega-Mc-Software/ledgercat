@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -19,7 +20,15 @@ public class PropertyDialog : Form
     readonly TextBox rentT = new() { Width = 240 };
     readonly TextBox dueT = new() { Width = 240 };
     readonly TextBox leaseT = new() { Width = 240 };
+    readonly TextBox secDepT = new() { Width = 240 };
+    readonly CheckBox petsC = new() { Text = "Pets allowed", AutoSize = true };
+    readonly TextBox petCountT = new() { Width = 240 };
+    readonly TextBox petRentT = new() { Width = 240 };
+    readonly TextBox petDepT = new() { Width = 240 };
+    readonly CheckBox trackRentC = new() { Text = "Watch this property's rent (due day + late fee)", AutoSize = true, Checked = true };
+    readonly TextBox lateFeeT = new() { Width = 240 };
     readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 56 };
+    readonly Label totalLbl = new() { AutoSize = true, ForeColor = Theme.Muted };
 
     public PropertyDialog(Property? existing)
     {
@@ -28,7 +37,7 @@ public class PropertyDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(400, 470);
+        ClientSize = new Size(410, 700);
         Font = Theme.BaseFont;
 
         if (existing != null)
@@ -43,8 +52,18 @@ public class PropertyDialog : Form
             rentT.Text = P.Rent == 0 ? "" : P.Rent.ToString("0.##");
             dueT.Text = P.DueDay.ToString();
             leaseT.Text = P.LeaseEnd;
+            secDepT.Text = P.SecurityDeposit == 0 ? "" : P.SecurityDeposit.ToString("0.##");
+            petsC.Checked = P.PetsOk;
+            petCountT.Text = P.PetCount == 0 ? "" : P.PetCount.ToString();
+            petRentT.Text = P.PetRent == 0 ? "" : P.PetRent.ToString("0.##");
+            petDepT.Text = P.PetDeposit == 0 ? "" : P.PetDeposit.ToString("0.##");
+            trackRentC.Checked = P.TrackRent;
+            lateFeeT.Text = P.LateFee == 0 ? "" : P.LateFee.ToString("0.##");
             notesT.Text = P.LeaseNotes;
         }
+        petsC.CheckedChanged += (_, _) => SyncPetFields();
+        rentT.TextChanged += (_, _) => UpdateTotal();
+        petRentT.TextChanged += (_, _) => UpdateTotal();
 
         var tlp = new TableLayoutPanel
         {
@@ -65,17 +84,27 @@ public class PropertyDialog : Form
         AddRow(tlp, "Rent $/mo *", rentT);
         AddRow(tlp, "Due day * (1-28)", dueT);
         AddRow(tlp, "Lease ends", leaseT);
+        AddRow(tlp, "Security deposit $", secDepT);
+        AddRow(tlp, "Pets", petsC);
+        AddRow(tlp, "Pet count", petCountT);
+        AddRow(tlp, "Pet rent $/mo", petRentT);
+        AddRow(tlp, "Pet deposit $", petDepT);
+        AddRow(tlp, "Rent tracking", trackRentC);
+        AddRow(tlp, "Late fee $", lateFeeT);
         AddRow(tlp, "Lease / move notes", notesT);
+
+        tlp.Controls.Add(totalLbl, 1, 16);
 
         var hint = new Label
         {
             Text = "Lease date format: 2027-08-31 — leave empty if month-to-month.\n" +
+                   "Total due/mo = rent + pet rent. The late fee only applies when rent passes the due day.\n" +
                    "Notes are for renewal plans, move-out dates, deposit details.",
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
         };
-        tlp.Controls.Add(hint, 0, 10);
+        tlp.Controls.Add(hint, 0, 17);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
@@ -94,6 +123,26 @@ public class PropertyDialog : Form
         Controls.Add(btns);
         AcceptButton = ok;
         CancelButton = cancel;
+
+        SyncPetFields();
+        UpdateTotal();
+    }
+
+    void SyncPetFields()
+    {
+        bool on = petsC.Checked;
+        petCountT.Enabled = on;
+        petRentT.Enabled = on;
+        petDepT.Enabled = on;
+    }
+
+    void UpdateTotal()
+    {
+        decimal rent = Ui.ParseMoneyOrZero(rentT.Text, out var r) ? r : 0;
+        decimal petRent = Ui.ParseMoneyOrZero(petRentT.Text, out var pr) ? pr : 0;
+        totalLbl.Text = petsC.Checked && petRent > 0
+            ? $"Total due each month: {Theme.Money(rent + petRent)} (rent + pet rent)"
+            : $"Total due each month: {Theme.Money(rent)}";
     }
 
     static void AddRow(TableLayoutPanel tlp, string label, Control c)
@@ -133,6 +182,36 @@ public class PropertyDialog : Form
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
+        if (!Ui.ParseMoneyOrZero(secDepT.Text, out var secDep))
+        {
+            MessageBox.Show("Security deposit must be a number (0 or more), or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!int.TryParse(petCountT.Text.Trim(), out var petCount) || petCount < 0)
+        {
+            MessageBox.Show("Pet count must be a whole number (0 or more), or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!Ui.ParseMoneyOrZero(petRentT.Text, out var petRent))
+        {
+            MessageBox.Show("Pet rent must be a number (0 or more), or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!Ui.ParseMoneyOrZero(petDepT.Text, out var petDep))
+        {
+            MessageBox.Show("Pet deposit must be a number (0 or more), or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!Ui.ParseMoneyOrZero(lateFeeT.Text, out var lateFee))
+        {
+            MessageBox.Show("Late fee must be a number (0 or more), or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
 
         // Guard rails: an empty tenant or phone is allowed, but never by accident.
         if (string.IsNullOrWhiteSpace(tenantT.Text) && !Confirm(
@@ -154,6 +233,13 @@ public class PropertyDialog : Form
         P.DueDay = due;
         P.LeaseEnd = lease;
         P.LeaseNotes = notesT.Text.Trim();
+        P.SecurityDeposit = secDep;
+        P.PetsOk = petsC.Checked;
+        P.PetCount = petsC.Checked ? petCount : 0;
+        P.PetRent = petsC.Checked ? petRent : 0;
+        P.PetDeposit = petsC.Checked ? petDep : 0;
+        P.TrackRent = trackRentC.Checked;
+        P.LateFee = lateFee;
         DialogResult = DialogResult.OK;
     }
 }
@@ -170,13 +256,17 @@ public class TxnDialog : Form
     readonly TextBox noteT = new() { Width = 240 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
+    readonly Txn? existing;
+    bool touchedAmount;
+    bool touchedCat;
 
     public TxnDialog(string kind, List<Property> props) : this(kind, props, null) { }
 
-    public TxnDialog(string kind, List<Property> props, Txn? existing)
+    public TxnDialog(string kind, List<Property> props, Txn? existing, Property? prefillFrom = null)
     {
         this.kind = existing?.Kind ?? kind;
         this.props = props;
+        this.existing = existing;
 
         bool editing = existing != null;
         Text = editing
@@ -201,11 +291,22 @@ public class TxnDialog : Form
             propIds.Add(p.Id);
             propC.Items.Add(p.Label);
         }
+
+        // v1.2.1: picking a property on a new rent entry suggests its total rent + the current month
+        amountT.TextChanged += (_, _) => touchedAmount = true;
+        catT.TextChanged += (_, _) => touchedCat = true;
+        propC.SelectedIndexChanged += (_, _) => PrefillForProperty();
+
         propC.SelectedIndex = 0;
         if (existing?.PropertyId is long pid)
         {
             var idx = propIds.IndexOf(pid);
             if (idx >= 0) propC.SelectedIndex = idx;
+        }
+        else if (prefillFrom != null)
+        {
+            var idx = propIds.IndexOf(prefillFrom.Id);
+            if (idx > 0) propC.SelectedIndex = idx;
         }
 
         var tlp = new TableLayoutPanel
@@ -252,6 +353,16 @@ public class TxnDialog : Form
         CancelButton = cancel;
     }
 
+    void PrefillForProperty()
+    {
+        if (existing != null || kind != "rent" || propC.SelectedIndex <= 0) return;
+        var p = props[propC.SelectedIndex - 1];
+        if (p.TotalRentDue > 0 && !touchedAmount && amountT.Text.Length == 0)
+            amountT.Text = p.TotalRentDue.ToString("0.##");
+        if (!touchedCat && catT.Text.Length == 0)
+            catT.Text = DateTime.Today.ToString("MMMM", CultureInfo.InvariantCulture);
+    }
+
     static void AddRow(TableLayoutPanel tlp, string label, Control c)
     {
         var l = new Label { Text = label, TextAlign = ContentAlignment.MiddleLeft, AutoSize = true };
@@ -273,6 +384,17 @@ public class TxnDialog : Form
             MessageBox.Show("Amount must be a number greater than 0.", "LedgerCat",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
+        }
+
+        // v1.2.1: rent entries are checked against the property's tracked rent
+        if (kind == "rent" && propC.SelectedIndex > 0)
+        {
+            var p = props[propC.SelectedIndex - 1];
+            if (p.TotalRentDue > 0 && amount != p.TotalRentDue && MessageBox.Show(
+                    $"This rent entry is {Theme.Money(amount)}, but {p.Label}'s rent to collect is {Theme.Money(p.TotalRentDue)} (rent + pet rent).\n\nSave anyway?",
+                    "Amount differs from expected rent",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
         }
 
         var idx = propC.SelectedIndex;
@@ -302,6 +424,8 @@ public class ReqDialog : Form
     readonly TextBox companyT = new() { Width = 240 };
     readonly TextBox handyNameT = new() { Width = 240 };
     readonly TextBox handyPhoneT = new() { Width = 240 };
+    readonly TextBox retryT = new() { Width = 240 };
+    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 56 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
 
@@ -316,7 +440,7 @@ public class ReqDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(400, 500);
+        ClientSize = new Size(400, 590);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Created ?? Ui.Today();
@@ -326,6 +450,8 @@ public class ReqDialog : Form
         companyT.Text = existing?.Company ?? "";
         handyNameT.Text = existing?.HandymanName ?? "";
         handyPhoneT.Text = existing?.HandymanPhone ?? "";
+        retryT.Text = existing?.RetryLater ?? "";
+        notesT.Text = existing?.Notes ?? "";
 
         propIds.Add(null);
         propC.Items.Add("(no property)");
@@ -363,15 +489,18 @@ public class ReqDialog : Form
         AddRow(tlp, "Company", companyT);
         AddRow(tlp, "Handyman name", handyNameT);
         AddRow(tlp, "Handyman phone", handyPhoneT);
+        AddRow(tlp, "Retry later", retryT);
+        AddRow(tlp, "Notes / comments", notesT);
 
         var hint = new Label
         {
-            Text = "Tenant contact = who lives there. Handyman = who you call to fix it.",
+            Text = "Tenant contact = who lives there. Handyman = who you call to fix it.\n" +
+                   "Retry later: when to come back to this — a date like 2026-09-20, or a short note.",
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
         };
-        tlp.Controls.Add(hint, 0, 9);
+        tlp.Controls.Add(hint, 0, 11);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
@@ -428,7 +557,66 @@ public class ReqDialog : Form
             Company = companyT.Text.Trim(),
             HandymanName = handyNameT.Text.Trim(),
             HandymanPhone = handyPhoneT.Text.Trim(),
+            RetryLater = retryT.Text.Trim(),
+            Notes = notesT.Text.Trim(),
         };
         DialogResult = DialogResult.OK;
+    }
+}
+
+/// <summary>
+/// v1.2.1: canceling a request asks why. The reason lands in the request's Notes column.
+/// </summary>
+public class CancelDialog : Form
+{
+    public string Reason = "";
+
+    readonly TextBox reasonT = new() { Multiline = true, Height = 64, Dock = DockStyle.Fill };
+
+    public CancelDialog(string what)
+    {
+        Text = "Cancel request";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(420, 220);
+        Font = Theme.BaseFont;
+
+        var tlp = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(14),
+            ColumnCount = 1,
+            RowCount = 3,
+        };
+        tlp.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        tlp.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var ask = new Label
+        {
+            Text = $"Cancel \"{what}\"?\n\nWhy cancel? (optional — it shows in the Notes column so future-you remembers)",
+            AutoSize = true,
+        };
+        tlp.Controls.Add(ask, 0, 0);
+        tlp.Controls.Add(reasonT, 0, 1);
+
+        var ok = Ui.Btn("Cancel request", 130, (_, _) => { Reason = reasonT.Text.Trim(); DialogResult = DialogResult.OK; });
+        var cancel = Ui.Btn("Keep it open", 120, (_, _) => DialogResult = DialogResult.Cancel);
+        var btns = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(10),
+        };
+        btns.Controls.Add(cancel);
+        btns.Controls.Add(ok);
+
+        Controls.Add(tlp);
+        Controls.Add(btns);
+        AcceptButton = ok;
+        CancelButton = cancel;
     }
 }

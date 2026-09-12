@@ -18,9 +18,18 @@ public class Property
     public string ContactPhone = "";
     public string StateId = "";
     public string LeaseNotes = "";
+    public bool PetsOk;
+    public int PetCount;
+    public decimal PetRent;
+    public decimal PetDeposit;
+    public decimal SecurityDeposit;
+    public bool TrackRent = true;
+    public decimal LateFee;
     public bool Deleted;
 
     public string Label => string.IsNullOrWhiteSpace(Unit) ? Name : Name + " / " + Unit;
+    /// What the tenant owes each month in normal months: base rent + pet rent. Late fees only apply when rent is late.
+    public decimal TotalRentDue => Rent + PetRent;
 }
 
 public class Txn
@@ -51,6 +60,9 @@ public class Req
     public string Company = "";
     public string HandymanName = "";
     public string HandymanPhone = "";
+    public string CancelReason = "";
+    public string RetryLater = ""; // date to come back to this, or free text
+    public string Notes = "";
     public bool Deleted;
 }
 
@@ -87,7 +99,11 @@ CREATE TABLE IF NOT EXISTS properties(
   name TEXT NOT NULL, unit TEXT DEFAULT '', tenant TEXT DEFAULT '',
   rent REAL DEFAULT 0, due_day INTEGER DEFAULT 1, lease_end TEXT DEFAULT '',
   contact_name TEXT DEFAULT '', contact_phone TEXT DEFAULT '',
-  state_id TEXT DEFAULT '', lease_notes TEXT DEFAULT '', deleted INTEGER DEFAULT 0);
+  state_id TEXT DEFAULT '', lease_notes TEXT DEFAULT '',
+  pets_ok INTEGER DEFAULT 0, pet_count INTEGER DEFAULT 0, pet_rent REAL DEFAULT 0,
+  pet_deposit REAL DEFAULT 0, security_deposit REAL DEFAULT 0,
+  track_rent INTEGER DEFAULT 1, late_fee REAL DEFAULT 0,
+  deleted INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS transactions(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL, property_id INTEGER,
@@ -100,6 +116,7 @@ CREATE TABLE IF NOT EXISTS requests(
   status TEXT DEFAULT 'open',
   contact_name TEXT DEFAULT '', contact_phone TEXT DEFAULT '',
   company TEXT DEFAULT '', handyman_name TEXT DEFAULT '', handyman_phone TEXT DEFAULT '',
+  cancel_reason TEXT DEFAULT '', retry_later TEXT DEFAULT '', notes TEXT DEFAULT '',
   deleted INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
@@ -110,6 +127,13 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         EnsureColumn(con, "properties", "state_id TEXT DEFAULT ''");
         EnsureColumn(con, "properties", "lease_notes TEXT DEFAULT ''");
         EnsureColumn(con, "properties", "deleted INTEGER DEFAULT 0");
+        EnsureColumn(con, "properties", "pets_ok INTEGER DEFAULT 0");
+        EnsureColumn(con, "properties", "pet_count INTEGER DEFAULT 0");
+        EnsureColumn(con, "properties", "pet_rent REAL DEFAULT 0");
+        EnsureColumn(con, "properties", "pet_deposit REAL DEFAULT 0");
+        EnsureColumn(con, "properties", "security_deposit REAL DEFAULT 0");
+        EnsureColumn(con, "properties", "track_rent INTEGER DEFAULT 1");
+        EnsureColumn(con, "properties", "late_fee REAL DEFAULT 0");
         EnsureColumn(con, "transactions", "deleted INTEGER DEFAULT 0");
         EnsureColumn(con, "requests", "status TEXT DEFAULT 'open'");
         EnsureColumn(con, "requests", "contact_name TEXT DEFAULT ''");
@@ -118,6 +142,9 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         EnsureColumn(con, "requests", "handyman_name TEXT DEFAULT ''");
         EnsureColumn(con, "requests", "handyman_phone TEXT DEFAULT ''");
         EnsureColumn(con, "requests", "deleted INTEGER DEFAULT 0");
+        EnsureColumn(con, "requests", "cancel_reason TEXT DEFAULT ''");
+        EnsureColumn(con, "requests", "retry_later TEXT DEFAULT ''");
+        EnsureColumn(con, "requests", "notes TEXT DEFAULT ''");
 
         using var fix = con.CreateCommand();
         fix.CommandText = "UPDATE requests SET status='done' WHERE done=1 AND (status IS NULL OR status='' OR status='open')";
@@ -156,7 +183,8 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
 
     // ---------- properties ----------
 
-    const string PropCols = "id,name,unit,tenant,rent,due_day,lease_end,contact_name,contact_phone,state_id,lease_notes,deleted";
+    const string PropCols = "id,name,unit,tenant,rent,due_day,lease_end,contact_name,contact_phone,state_id,lease_notes," +
+                            "pets_ok,pet_count,pet_rent,pet_deposit,security_deposit,track_rent,late_fee,deleted";
 
     static Property ReadProp(SqliteDataReader r) => new()
     {
@@ -171,7 +199,14 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         ContactPhone = Str(r[8]),
         StateId = Str(r[9]),
         LeaseNotes = Str(r[10]),
-        Deleted = Bool(r[11]),
+        PetsOk = Bool(r[12]),
+        PetCount = ToInt(r[13]),
+        PetRent = ToDec(r[14]),
+        PetDeposit = ToDec(r[15]),
+        SecurityDeposit = ToDec(r[16]),
+        TrackRent = r.IsDBNull(17) || ToInt(r[17]) != 0, // older rows default to tracked
+        LateFee = ToDec(r[18]),
+        Deleted = Bool(r[19]),
     };
 
     public static List<Property> ListProps(bool deleted = false)
@@ -193,13 +228,16 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         if (p.Id == 0)
         {
             cmd.CommandText = @"INSERT INTO properties(name,unit,tenant,rent,due_day,lease_end,
-                    contact_name,contact_phone,state_id,lease_notes,deleted)
-                VALUES($n,$u,$t,$r,$d,$l,$cn,$cp,$sid,$ln,$del); SELECT last_insert_rowid();";
+                    contact_name,contact_phone,state_id,lease_notes,
+                    pets_ok,pet_count,pet_rent,pet_deposit,security_deposit,track_rent,late_fee,deleted)
+                VALUES($n,$u,$t,$r,$d,$l,$cn,$cp,$sid,$ln,$po,$pc,$pr,$pd,$sd,$tr,$lf,$del); SELECT last_insert_rowid();";
         }
         else
         {
             cmd.CommandText = @"UPDATE properties SET name=$n, unit=$u, tenant=$t, rent=$r, due_day=$d, lease_end=$l,
-                    contact_name=$cn, contact_phone=$cp, state_id=$sid, lease_notes=$ln, deleted=$del
+                    contact_name=$cn, contact_phone=$cp, state_id=$sid, lease_notes=$ln,
+                    pets_ok=$po, pet_count=$pc, pet_rent=$pr, pet_deposit=$pd, security_deposit=$sd,
+                    track_rent=$tr, late_fee=$lf, deleted=$del
                 WHERE id=$id; SELECT $id;";
             cmd.Parameters.AddWithValue("$id", p.Id);
         }
@@ -213,6 +251,13 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         cmd.Parameters.AddWithValue("$cp", p.ContactPhone);
         cmd.Parameters.AddWithValue("$sid", p.StateId);
         cmd.Parameters.AddWithValue("$ln", p.LeaseNotes);
+        cmd.Parameters.AddWithValue("$po", Flag(p.PetsOk));
+        cmd.Parameters.AddWithValue("$pc", p.PetCount);
+        cmd.Parameters.AddWithValue("$pr", Num(p.PetRent));
+        cmd.Parameters.AddWithValue("$pd", Num(p.PetDeposit));
+        cmd.Parameters.AddWithValue("$sd", Num(p.SecurityDeposit));
+        cmd.Parameters.AddWithValue("$tr", Flag(p.TrackRent));
+        cmd.Parameters.AddWithValue("$lf", Num(p.LateFee));
         cmd.Parameters.AddWithValue("$del", Flag(p.Deleted));
         var v = cmd.ExecuteScalar();
         return Convert.ToInt64(v ?? 0L);
@@ -344,7 +389,7 @@ ORDER BY t.date DESC, t.id DESC";
     // ---------- requests ----------
 
     const string ReqCols = "q.id, q.created, q.kind, q.description, q.status, q.contact_name, q.contact_phone, " +
-                           "q.company, q.handyman_name, q.handyman_phone, q.deleted";
+                           "q.company, q.handyman_name, q.handyman_phone, q.cancel_reason, q.retry_later, q.notes, q.deleted";
 
     static Req ReadReq(SqliteDataReader r, long? propertyId, string propLabel) => new()
     {
@@ -358,7 +403,10 @@ ORDER BY t.date DESC, t.id DESC";
         Company = Str(r[7]),
         HandymanName = Str(r[8]),
         HandymanPhone = Str(r[9]),
-        Deleted = Bool(r[10]),
+        CancelReason = Str(r[10]),
+        RetryLater = Str(r[11]),
+        Notes = Str(r[12]),
+        Deleted = Bool(r[13]),
         PropertyId = propertyId,
         PropLabel = propLabel,
     };
@@ -394,12 +442,14 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
         using var cmd = con.CreateCommand();
         if (q.Id == 0)
             cmd.CommandText = @"INSERT INTO requests(created,property_id,kind,description,status,
-                    contact_name,contact_phone,company,handyman_name,handyman_phone,deleted)
-                VALUES($d,$p,$k,$s,$st,$cn,$cp,$co,$hn,$hp,$del)";
+                    contact_name,contact_phone,company,handyman_name,handyman_phone,
+                    cancel_reason,retry_later,notes,deleted)
+                VALUES($d,$p,$k,$s,$st,$cn,$cp,$co,$hn,$hp,$cr,$rl,$nt,$del)";
         else
         {
             cmd.CommandText = @"UPDATE requests SET created=$d, property_id=$p, kind=$k, description=$s, status=$st,
-                    contact_name=$cn, contact_phone=$cp, company=$co, handyman_name=$hn, handyman_phone=$hp, deleted=$del
+                    contact_name=$cn, contact_phone=$cp, company=$co, handyman_name=$hn, handyman_phone=$hp,
+                    cancel_reason=$cr, retry_later=$rl, notes=$nt, deleted=$del
                 WHERE id=$id";
             cmd.Parameters.AddWithValue("$id", q.Id);
         }
@@ -413,6 +463,9 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
         cmd.Parameters.AddWithValue("$co", q.Company);
         cmd.Parameters.AddWithValue("$hn", q.HandymanName);
         cmd.Parameters.AddWithValue("$hp", q.HandymanPhone);
+        cmd.Parameters.AddWithValue("$cr", q.CancelReason);
+        cmd.Parameters.AddWithValue("$rl", q.RetryLater);
+        cmd.Parameters.AddWithValue("$nt", q.Notes);
         cmd.Parameters.AddWithValue("$del", Flag(q.Deleted));
         cmd.ExecuteNonQuery();
     }
