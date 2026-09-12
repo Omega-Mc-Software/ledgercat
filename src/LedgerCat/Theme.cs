@@ -25,7 +25,9 @@ public static class Theme
     public static Color Text   => Dark ? Color.FromArgb(237, 231, 223) : Color.FromArgb(31, 29, 27);
     public static Color Muted  => Dark ? Color.FromArgb(158, 150, 141) : Color.FromArgb(110, 105, 97);
     public static Color Accent => Dark ? Color.FromArgb(232, 151, 63)  : Color.FromArgb(186, 112, 38);
-    public static Color WarnBg => Dark ? Color.FromArgb(84, 55, 24)    : Color.FromArgb(250, 224, 186);
+    public static Color WarnBg   => Dark ? Color.FromArgb(84, 55, 24)    : Color.FromArgb(250, 224, 186);
+    public static Color PinkBg   => Dark ? Color.FromArgb(97, 47, 61)    : Color.FromArgb(252, 209, 223);
+    public static Color PinkDeep => Dark ? Color.FromArgb(122, 38, 56)   : Color.FromArgb(247, 168, 190);
     public static Color Good   => Dark ? Color.FromArgb(120, 180, 120) : Color.FromArgb(46, 120, 68);
     public static Color GridLine => Dark ? Color.FromArgb(62, 56, 51)  : Color.FromArgb(221, 216, 207);
 

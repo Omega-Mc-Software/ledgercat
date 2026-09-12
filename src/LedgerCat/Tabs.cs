@@ -230,11 +230,13 @@ public class PropertiesTab : UserControl
             string lease = p.LeaseEnd;
             string days = "";
             bool warn = false;
+            bool expired = false;
             if (Ui.ParseDate(lease, out var d))
             {
                 int left = (int)(d.ToDateTime(new TimeOnly()) - today).TotalDays;
                 days = left.ToString();
                 if (left <= 60) { warn = true; soon++; }
+                if (left < 0) expired = true;
             }
             string contact = p.ContactPhone.Length > 0
                 ? (p.ContactName.Length > 0 ? $"{p.ContactName} · {p.ContactPhone}" : p.ContactPhone)
@@ -245,7 +247,8 @@ public class PropertiesTab : UserControl
             row.Tag = p.Id;
             if (warn)
             {
-                row.DefaultCellStyle.BackColor = Theme.WarnBg;
+                // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
+                row.DefaultCellStyle.BackColor = expired ? Theme.PinkDeep : Theme.PinkBg;
                 row.DefaultCellStyle.ForeColor = Theme.Text;
                 row.DefaultCellStyle.SelectionBackColor = Theme.Accent;
                 row.DefaultCellStyle.SelectionForeColor = Color.White;

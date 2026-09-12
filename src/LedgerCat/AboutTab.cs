@@ -19,10 +19,13 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.1", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2: properties with a lease ending within 60 days are marked pink — deeper red-pink " +
+                 "once the date has passed. More of my father's real-use critique list is on the way.", muted: true);
 
         Add(tlp, "New in v1.1: contact details and State ID on every property, lease notes, a search box and " +
                  "category filter on the money tab, Canceled as a real request status, and a Deleted view on " +
