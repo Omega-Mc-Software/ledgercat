@@ -375,8 +375,21 @@ public class TxnDialog : Form
     {
         if (existing != null || kind != "rent" || propC.SelectedIndex <= 0) return;
         var p = props[propC.SelectedIndex - 1];
-        decimal amount = p.TotalRentDue;
-        // v1.2.5 (Dad): past-due and unpaid means the suggestion includes the late fee
+        decimal amount = ExpectedRent(p, out bool withFee); // v1.2.6 (Dad): shared expected-rent math so the prefill and the confirm popup always agree
+        if (withFee && noteT.Text.Length == 0)
+            noteT.Text = $"includes {p.LateFee:0.##} late fee";
+        if (amount > 0 && !touchedAmount && amountT.Text.Length == 0)
+            amountT.Text = amount.ToString("0.##");
+        if (!touchedCat && catT.Text.Length == 0)
+            catT.Text = DateTime.Today.ToString("MMMM", CultureInfo.InvariantCulture);
+    }
+
+    // What this month's rent entry for this property should total: rent + pet rent,
+    // plus the late fee only when the property is tracked, charges one, is past due, and hasn't paid yet.
+    decimal ExpectedRent(Property p, out bool lateFeeIncluded)
+    {
+        lateFeeIncluded = false;
+        decimal expected = p.TotalRentDue;
         if (p.TrackRent && p.TotalRentDue > 0 && p.LateFee > 0 && DateTime.Today.Day > p.DueDay)
         {
             string mk = DateTime.Today.ToString("yyyy-MM");
@@ -384,14 +397,11 @@ public class TxnDialog : Form
                 t.Kind == "rent" && t.PropertyId == p.Id && t.Date.StartsWith(mk));
             if (!paidAlready)
             {
-                amount += p.LateFee;
-                if (noteT.Text.Length == 0) noteT.Text = $"includes {p.LateFee:0.##} late fee";
+                expected += p.LateFee;
+                lateFeeIncluded = true;
             }
         }
-        if (amount > 0 && !touchedAmount && amountT.Text.Length == 0)
-            amountT.Text = amount.ToString("0.##");
-        if (!touchedCat && catT.Text.Length == 0)
-            catT.Text = DateTime.Today.ToString("MMMM", CultureInfo.InvariantCulture);
+        return expected;
     }
 
     static void AddRow(TableLayoutPanel tlp, string label, Control c)
@@ -421,8 +431,9 @@ public class TxnDialog : Form
         if (kind == "rent" && propC.SelectedIndex > 0)
         {
             var p = props[propC.SelectedIndex - 1];
-            if (p.TotalRentDue > 0 && amount != p.TotalRentDue && MessageBox.Show(
-                    $"This rent entry is {Theme.Money(amount)}, but {p.Label}'s rent to collect is {Theme.Money(p.TotalRentDue)} (rent + pet rent).\n\nSave anyway?",
+            decimal expected = ExpectedRent(p, out bool withFee); // v1.2.6 (Dad): expected includes the late fee too, so a correct prefill no longer triggers this
+            if (p.TotalRentDue > 0 && amount != expected && MessageBox.Show(
+                    $"This rent entry is {Theme.Money(amount)}, but {p.Label}'s rent to collect is {Theme.Money(expected)} (rent + pet rent{(withFee ? " + late fee" : "")}).\n\nSave anyway?",
                     "Amount differs from expected rent",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;

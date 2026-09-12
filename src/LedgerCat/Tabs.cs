@@ -331,7 +331,10 @@ public class PropertiesTab : UserControl
                 if (paidIds.Contains(p.Id)) { rentStatus = "Paid ✓"; paid = true; }
                 else if (today.Day > p.DueDay)
                 {
-                    rentStatus = p.LateFee > 0 ? $"LATE (+{p.LateFee:0.##})" : "LATE";
+                    // v1.2.6 (Dad): late rows show the actual number due, late fee included
+                    rentStatus = p.LateFee > 0
+                        ? $"LATE {Theme.Money(p.TotalRentDue + p.LateFee)} (+{p.LateFee:0.##} fee)"
+                        : $"LATE {Theme.Money(p.TotalRentDue)}";
                     late = true;
                 }
                 else rentStatus = Theme.Money(p.TotalRentDue); // v1.2.5 (Dad): show what's owed, not the due day

@@ -19,10 +19,16 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.5", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.6", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.6: the Rent this month column now shows the actual number on late rows — " +
+                 "LATE $3 (+$2 fee) instead of a bare LATE, so the amount due with the late fee is right " +
+                 "there in the list. And the record-rent confirm popup got smarter: when the suggestion " +
+                 "already includes the late fee, it expects the fee in the total instead of asking you to " +
+                 "confirm the same number twice.", muted: true);
 
         Add(tlp, "New in v1.2.5: paid is now a color — a tracked property whose rent came in for this " +
                  "month glows light green across the whole row. The Rent this month column shows the amount " +
