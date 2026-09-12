@@ -188,7 +188,9 @@ public class PropertyDialog : Form
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        if (!int.TryParse(petCountT.Text.Trim(), out var petCount) || petCount < 0)
+        var petCount = 0;
+        if (petCountT.Text.Trim() != "" &&
+            (!int.TryParse(petCountT.Text.Trim(), out petCount) || petCount < 0))
         {
             MessageBox.Show("Pet count must be a whole number (0 or more), or stay empty.", "LedgerCat",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);

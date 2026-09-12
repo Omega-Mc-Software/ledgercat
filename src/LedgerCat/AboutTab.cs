@@ -19,10 +19,15 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.1", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.2", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.2: crash fix — adding or editing a property crashed with an " +
+                 "ArgumentOutOfRangeException (a column-reading mix-up in the database layer), and pet " +
+                 "count blocked saving an unchecked-pets property when left empty. Both fixed. Also fixed: " +
+                 "requests could lose their property link on the list.", muted: true);
 
         Add(tlp, "New in v1.2.1: the rest of my father's critique list. Properties now carry pets (allowed, " +
                  "count, pet rent, pet deposit), a security deposit field, an optional late fee, and a rent-tracking " +

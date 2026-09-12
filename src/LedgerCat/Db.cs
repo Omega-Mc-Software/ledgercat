@@ -199,14 +199,14 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         ContactPhone = Str(r[8]),
         StateId = Str(r[9]),
         LeaseNotes = Str(r[10]),
-        PetsOk = Bool(r[12]),
-        PetCount = ToInt(r[13]),
-        PetRent = ToDec(r[14]),
-        PetDeposit = ToDec(r[15]),
-        SecurityDeposit = ToDec(r[16]),
-        TrackRent = r.IsDBNull(17) || ToInt(r[17]) != 0, // older rows default to tracked
-        LateFee = ToDec(r[18]),
-        Deleted = Bool(r[19]),
+        PetsOk = Bool(r[11]),
+        PetCount = ToInt(r[12]),
+        PetRent = ToDec(r[13]),
+        PetDeposit = ToDec(r[14]),
+        SecurityDeposit = ToDec(r[15]),
+        TrackRent = r.IsDBNull(16) || ToInt(r[16]) != 0, // older rows default to tracked
+        LateFee = ToDec(r[17]),
+        Deleted = Bool(r[18]),
     };
 
     public static List<Property> ListProps(bool deleted = false)
@@ -426,8 +426,8 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
-            long? pid = r.IsDBNull(11) ? null : r.GetInt64(11);
-            string label = r.IsDBNull(12) ? "" : r.GetString(12);
+            long? pid = r.IsDBNull(14) ? null : r.GetInt64(14);
+            string label = r.IsDBNull(15) ? "" : r.GetString(15);
             list.Add(ReadReq(r, pid, label));
         }
         return list;
