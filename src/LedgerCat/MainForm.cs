@@ -24,12 +24,13 @@ public class MainForm : Form
 
     public MainForm()
     {
-        Text = "LedgerCat v1.2.2 — by Neko Omega";
+        Text = "LedgerCat v1.2.3 — by Neko Omega";
         Width = 1120;
         Height = 720;
         MinimumSize = new System.Drawing.Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         Font = Theme.BaseFont;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
         var top = new Panel { Dock = DockStyle.Top, Height = 60, Padding = new Padding(10, 8, 10, 8) };
         themeBtn.Click += (_, _) => Theme.Toggle();

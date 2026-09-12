@@ -166,12 +166,11 @@ public class PropertiesTab : UserControl
         delGrid.Columns.Add(Ui.Col("Lease ends", 110, DataGridViewContentAlignment.MiddleRight));
 
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
-        var undoAll = Ui.Btn("Undo all", 100, (_, _) => UndoAll());
         var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
 
-        var bar = Ui.TopBar(va, vd, add, editB, recRent, del, undo, undoAll, purge);
+        var bar = Ui.TopBar(va, vd, add, editB, recRent, del, undo, purge);
         // hide deleted-view actions until that view is open
-        foreach (var c in new[] { undo, undoAll, purge }) c.Visible = false;
+        foreach (var c in new[] { undo, purge }) c.Visible = false;
         va.Click += (_, _) => SetViewButtons(false);
         vd.Click += (_, _) => SetViewButtons(true);
 
@@ -205,9 +204,14 @@ public class PropertiesTab : UserControl
 
     void SetViewButtons(bool deletedView)
     {
-        foreach (Control c in ((Control)Controls[1]).Controls) // the top bar
-            if (c is Button b && (b.Text == "Undo delete" || b.Text == "Undo all" || b.Text == "Delete forever"))
-                b.Visible = deletedView;
+        // v1.2.3 (Dad): deleted view shows only Undo delete + Delete forever; every other
+        // button grays out so it can never act on the active tab's hidden selection.
+        foreach (Control c in ((Control)Controls[1]).Controls)
+            if (c is Button b)
+            {
+                if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
+                else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
+            }
     }
 
     void EditSelected()
@@ -240,16 +244,6 @@ public class PropertiesTab : UserControl
     {
         if (Ui.SelectedId(delGrid) is not long id) return;
         Db.SetPropDeleted(id, false);
-        RefreshData();
-    }
-
-    void UndoAll()
-    {
-        var n = Db.ListProps(deleted: true).Count;
-        if (n == 0) return;
-        if (MessageBox.Show($"Restore all {n} deleted propert(y/ies)?", "Undo all",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        Db.RestoreAllProps();
         RefreshData();
     }
 
@@ -396,9 +390,8 @@ public class MoneyTab : UserControl
         delGrid.Columns.Add(Ui.Col("Note", 240));
 
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
-        var undoAll = Ui.Btn("Undo all", 100, (_, _) => UndoAll());
         var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
-        foreach (var c in new[] { undo, undoAll, purge }) c.Visible = false;
+        foreach (var c in new[] { undo, purge }) c.Visible = false;
         va.Click += (_, _) => SetViewButtons(false);
         vd.Click += (_, _) => SetViewButtons(true);
 
@@ -409,7 +402,7 @@ public class MoneyTab : UserControl
         catC.SelectedIndex = 0;
         catC.SelectedIndexChanged += (_, _) => { if (!catUpdating) RefreshData(); };
 
-        var bar = Ui.TopBar(va, vd, addRent, addExp, editB, del, searchLbl, searchT, catC);
+        var bar = Ui.TopBar(va, vd, addRent, addExp, editB, del, undo, purge, searchLbl, searchT, catC);
         var gridPanel = new Panel { Dock = DockStyle.Fill };
         gridPanel.Controls.Add(delGrid);
         gridPanel.Controls.Add(grid);
@@ -427,9 +420,14 @@ public class MoneyTab : UserControl
 
     void SetViewButtons(bool deletedView)
     {
+        // v1.2.3 (Dad): deleted view shows only Undo delete + Delete forever; every other
+        // button grays out so it can never act on the active tab's hidden selection.
         foreach (Control c in ((Control)Controls[1]).Controls)
-            if (c is Button b && (b.Text == "Undo delete" || b.Text == "Undo all" || b.Text == "Delete forever"))
-                b.Visible = deletedView;
+            if (c is Button b)
+            {
+                if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
+                else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
+            }
     }
 
     void AddTxn(string kind)
@@ -469,16 +467,6 @@ public class MoneyTab : UserControl
     {
         if (Ui.SelectedId(delGrid) is not long id) return;
         Db.SetTxnDeleted(id, false);
-        RefreshData();
-    }
-
-    void UndoAll()
-    {
-        var n = Db.ListTxnsDeleted().Count;
-        if (n == 0) return;
-        if (MessageBox.Show($"Restore all {n} deleted entr(y/ies)?", "Undo all",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        Db.RestoreAllTxns();
         RefreshData();
     }
 
@@ -616,13 +604,12 @@ public class RequestsTab : UserControl
         delGrid.Columns.Add(Ui.Col("Notes", 200));
 
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
-        var undoAll = Ui.Btn("Undo all", 100, (_, _) => UndoAll());
         var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
-        foreach (var c in new[] { undo, undoAll, purge }) c.Visible = false;
+        foreach (var c in new[] { undo, purge }) c.Visible = false;
         va.Click += (_, _) => SetViewButtons(false);
         vd.Click += (_, _) => SetViewButtons(true);
 
-        var bar = Ui.TopBar(va, vd, add, editB, toggle, cancelB, del);
+        var bar = Ui.TopBar(va, vd, add, editB, toggle, cancelB, del, undo, purge);
         var gridPanel = new Panel { Dock = DockStyle.Fill };
         gridPanel.Controls.Add(delGrid);
         gridPanel.Controls.Add(grid);
@@ -640,9 +627,14 @@ public class RequestsTab : UserControl
 
     void SetViewButtons(bool deletedView)
     {
+        // v1.2.3 (Dad): deleted view shows only Undo delete + Delete forever; every other
+        // button grays out so it can never act on the active tab's hidden selection.
         foreach (Control c in ((Control)Controls[1]).Controls)
-            if (c is Button b && (b.Text == "Undo delete" || b.Text == "Undo all" || b.Text == "Delete forever"))
-                b.Visible = deletedView;
+            if (c is Button b)
+            {
+                if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
+                else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
+            }
     }
 
     static string ContactCell(string name, string phone)
@@ -720,16 +712,6 @@ public class RequestsTab : UserControl
     {
         if (Ui.SelectedId(delGrid) is not long id) return;
         Db.SetReqDeleted(id, false);
-        RefreshData();
-    }
-
-    void UndoAll()
-    {
-        var n = Db.ListReqsDeleted().Count;
-        if (n == 0) return;
-        if (MessageBox.Show($"Restore all {n} deleted request(s)?", "Undo all",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        Db.RestoreAllReqs();
         RefreshData();
     }
 
