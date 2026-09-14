@@ -20,6 +20,7 @@ public class PropertyDialog : Form
     readonly TextBox rentT = new() { Width = 240 };
     readonly TextBox dueT = new() { Width = 240 };
     readonly TextBox leaseT = new() { Width = 240 };
+    readonly TextBox leaseStartT = new() { Width = 240 }; // v1.2.8 (Dad): when rent tracking starts — guards last-month tracking
     readonly TextBox secDepT = new() { Width = 240 };
     readonly CheckBox petsC = new() { Text = "Pets allowed", AutoSize = true };
     readonly TextBox petCountT = new() { Width = 240 };
@@ -37,7 +38,7 @@ public class PropertyDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(440, 720);
+        ClientSize = new Size(440, 760); // v1.2.8: +40 for the Lease start row
         Font = Theme.BaseFont;
 
         if (existing != null)
@@ -52,6 +53,7 @@ public class PropertyDialog : Form
             rentT.Text = P.Rent == 0 ? "" : P.Rent.ToString("0.##");
             dueT.Text = P.DueDay.ToString();
             leaseT.Text = P.LeaseEnd;
+            leaseStartT.Text = P.LeaseStart;
             secDepT.Text = P.SecurityDeposit == 0 ? "" : P.SecurityDeposit.ToString("0.##");
             petsC.Checked = P.PetsOk;
             petCountT.Text = P.PetCount == 0 ? "" : P.PetCount.ToString();
@@ -83,7 +85,8 @@ public class PropertyDialog : Form
         AddRow(tlp, "State ID / DL", stateIdT);
         AddRow(tlp, "Rent $/mo *", rentT);
         AddRow(tlp, "Due day * (1-28)", dueT);
-        AddRow(tlp, "Lease ends", leaseT);
+        AddRow(tlp, "Lease start", Ui.DateWithPicker(leaseStartT)); // v1.2.8: calendar picker beside the box (StorageCat port)
+        AddRow(tlp, "Lease ends", Ui.DateWithPicker(leaseT)); // v1.2.8: calendar picker beside the box
         AddRow(tlp, "Security deposit $", secDepT);
         AddRow(tlp, "Pets", petsC);
         AddRow(tlp, "Pet count", petCountT);
@@ -95,17 +98,18 @@ public class PropertyDialog : Form
         // v1.2.5 (Dad): the notes box kept hugging the label column — now it gets the whole
         // dialog width, with its label on its own line above it.
         var notesLbl = new Label { Text = "Lease / move notes", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
-        tlp.Controls.Add(notesLbl, 0, 16);
-        tlp.Controls.Add(notesT, 0, 17);
+        tlp.Controls.Add(notesLbl, 0, 18);
+        tlp.Controls.Add(notesT, 0, 19);
         tlp.SetColumnSpan(notesT, 2);
 
-        tlp.Controls.Add(totalLbl, 1, 15);
+        tlp.Controls.Add(totalLbl, 1, 16);
 
         var hint = new Label
         {
-            Text = "Lease date format: 2027-08-31 — leave empty if month-to-month.\n" +
+            Text = "Dates look like 2026-09-01 — leave empty if month-to-month. Lease start keeps a fresh move-in " +
+                   "from showing last month as owed.\n" +
                    "Total due/mo = rent + pet rent. The late fee only applies when rent passes the due day.\n" +
-                   "Notes are for renewal plans, move-out dates, deposit details.",
+                   "Notes are for renewal plans, move-out dates, deposit details. Double-click a 📝 in the grid to edit them fast.",
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
@@ -185,9 +189,25 @@ public class PropertyDialog : Form
             return;
         }
         string lease = leaseT.Text.Trim();
-        if (lease.Length > 0 && !Ui.ParseDate(lease, out _))
+        DateOnly leaseEnd = default, start = default;
+        if (lease.Length > 0 && !Ui.ParseDate(lease, out leaseEnd))
         {
             MessageBox.Show("Lease end date should look like 2027-08-31, or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        // v1.2.8 (Dad): lease start guards last-month tracking — it has to be a real date,
+        // and it can't sit after the lease ends.
+        string leaseStart = leaseStartT.Text.Trim();
+        if (leaseStart.Length > 0 && !Ui.ParseDate(leaseStart, out start))
+        {
+            MessageBox.Show("Lease start date should look like 2026-09-01, or stay empty.", "LedgerCat",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (leaseStart.Length > 0 && lease.Length > 0 && start > leaseEnd)
+        {
+            MessageBox.Show("Lease start is after lease end — double-check the two dates.", "LedgerCat",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -243,6 +263,7 @@ public class PropertyDialog : Form
         P.Rent = rent;
         P.DueDay = due;
         P.LeaseEnd = lease;
+        P.LeaseStart = leaseStart;
         P.LeaseNotes = notesT.Text.Trim();
         P.SecurityDeposit = secDep;
         P.PetsOk = petsC.Checked;
@@ -329,7 +350,7 @@ public class TxnDialog : Form
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        AddRow(tlp, "Date *", dateT);
+        AddRow(tlp, "Date *", Ui.DateWithPicker(dateT)); // v1.2.8: calendar picker beside the box (StorageCat port)
         AddRow(tlp, "Property", propC);
         AddRow(tlp, "Category", catT);
         AddRow(tlp, "Amount $ *", amountT);
@@ -375,9 +396,17 @@ public class TxnDialog : Form
     {
         if (existing != null || kind != "rent" || propC.SelectedIndex <= 0) return;
         var p = props[propC.SelectedIndex - 1];
-        decimal amount = ExpectedRent(p, out bool withFee); // v1.2.6 (Dad): shared expected-rent math so the prefill and the confirm popup always agree
-        if (withFee && noteT.Text.Length == 0)
-            noteT.Text = $"includes {p.LateFee:0.##} late fee";
+        decimal amount = ExpectedRent(p, out bool withFee, out decimal prevDue); // v1.2.6 (Dad): shared expected-rent math so the prefill and the confirm popup always agree
+        if (amount > 0 && noteT.Text.Length == 0)
+        {
+            // v1.2.8 (Dad): the note now says what the number is made of, carryover included
+            string note = withFee ? $"includes {p.LateFee:0.##} late fee" : "";
+            if (prevDue > 0)
+                note = note.Length > 0
+                    ? note + $" + {Theme.Money(prevDue)} from last month"
+                    : $"{Theme.Money(prevDue)} carried over from last month";
+            if (note.Length > 0) noteT.Text = note;
+        }
         if (amount > 0 && !touchedAmount && amountT.Text.Length == 0)
             amountT.Text = amount.ToString("0.##");
         if (!touchedCat && catT.Text.Length == 0)
@@ -386,14 +415,17 @@ public class TxnDialog : Form
 
     // What this month's rent entry for this property should total: rent + pet rent,
     // plus the late fee only when the property is tracked, charges one, is past due, and hasn't paid yet.
-    decimal ExpectedRent(Property p, out bool lateFeeIncluded)
+    // v1.2.8 (Dad): plus anything still unpaid from LAST month, so collecting both months in
+    // one entry doesn't trip the differs-from-expected popup.
+    decimal ExpectedRent(Property p, out bool lateFeeIncluded, out decimal prevUnpaid)
     {
         lateFeeIncluded = false;
         decimal expected = p.TotalRentDue;
+        var txns = Db.ListTxns();
         if (p.TrackRent && p.TotalRentDue > 0 && p.LateFee > 0 && DateTime.Today.Day > p.DueDay)
         {
             string mk = DateTime.Today.ToString("yyyy-MM");
-            bool paidAlready = Db.ListTxns().Any(t =>
+            bool paidAlready = txns.Any(t =>
                 t.Kind == "rent" && t.PropertyId == p.Id && t.Date.StartsWith(mk));
             if (!paidAlready)
             {
@@ -401,6 +433,8 @@ public class TxnDialog : Form
                 lateFeeIncluded = true;
             }
         }
+        prevUnpaid = Billing.PrevMonthUnpaid(p, txns, DateTime.Today);
+        expected += prevUnpaid;
         return expected;
     }
 
@@ -431,9 +465,9 @@ public class TxnDialog : Form
         if (kind == "rent" && propC.SelectedIndex > 0)
         {
             var p = props[propC.SelectedIndex - 1];
-            decimal expected = ExpectedRent(p, out bool withFee); // v1.2.6 (Dad): expected includes the late fee too, so a correct prefill no longer triggers this
+            decimal expected = ExpectedRent(p, out bool withFee, out decimal prevDue); // v1.2.6 (Dad): expected includes the late fee too, so a correct prefill no longer triggers this
             if (p.TotalRentDue > 0 && amount != expected && MessageBox.Show(
-                    $"This rent entry is {Theme.Money(amount)}, but {p.Label}'s rent to collect is {Theme.Money(expected)} (rent + pet rent{(withFee ? " + late fee" : "")}).\n\nSave anyway?",
+                    $"This rent entry is {Theme.Money(amount)}, but {p.Label}'s rent to collect is {Theme.Money(expected)} (rent + pet rent{(withFee ? " + late fee" : "")}{(prevDue > 0 ? $" + {Theme.Money(prevDue)} still owed from last month" : "")}).\n\nSave anyway?",
                     "Amount differs from expected rent",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
@@ -522,7 +556,7 @@ public class ReqDialog : Form
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        AddRow(tlp, "Date *", dateT);
+        AddRow(tlp, "Date *", Ui.DateWithPicker(dateT)); // v1.2.8: calendar picker beside the box (StorageCat port)
         AddRow(tlp, "Property", propC);
         AddRow(tlp, "Type", kindC);
         AddRow(tlp, "What's needed", descT);
@@ -663,6 +697,48 @@ public class CancelDialog : Form
         btns.Controls.Add(ok);
 
         Controls.Add(tlp);
+        Controls.Add(btns);
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+}
+
+// v1.2.8 (Dad): a tiny note editor — double-click a 📝 cell in any grid and write,
+// no full dialog needed.
+public class NoteDialog : Form
+{
+    public string NoteText => noteT.Text;
+    readonly TextBox noteT = new()
+    {
+        Multiline = true,
+        Dock = DockStyle.Fill,
+        ScrollBars = ScrollBars.Vertical,
+    };
+
+    public NoteDialog(string title, string text)
+    {
+        Text = title;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(460, 300);
+        Font = Theme.BaseFont;
+        noteT.Text = text;
+
+        var ok = Ui.Btn("Save", 100, (_, _) => DialogResult = DialogResult.OK);
+        var cancel = Ui.Btn("Cancel", 100, (_, _) => DialogResult = DialogResult.Cancel);
+        var btns = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(10),
+        };
+        btns.Controls.Add(cancel);
+        btns.Controls.Add(ok);
+
+        Controls.Add(noteT);
         Controls.Add(btns);
         AcceptButton = ok;
         CancelButton = cancel;

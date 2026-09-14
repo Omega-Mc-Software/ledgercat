@@ -34,7 +34,7 @@ public class ImportExportTab : UserControl
     class PropRow
     {
         public long id;
-        public string name = "", unit = "", tenant = "", lease_end = "";
+        public string name = "", unit = "", tenant = "", lease_end = "", lease_start = "";
         public string contact_name = "", contact_phone = "", state_id = "", lease_notes = "";
         public decimal rent;
         public int due_day = 1;
@@ -147,7 +147,7 @@ public class ImportExportTab : UserControl
         ["transactions"] = ("Transactions CSV|*.csv",
             new[] { "date", "property", "kind", "category", "amount", "note" }, "transactions"),
         ["properties"] = ("Properties CSV|*.csv",
-            new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "pet_rent", "late_fee", "due_day", "security_deposit", "pets_ok", "pet_count", "pet_deposit", "track_rent", "lease_end", "lease_notes" }, "properties"),
+            new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "pet_rent", "late_fee", "due_day", "security_deposit", "pets_ok", "pet_count", "pet_deposit", "track_rent", "lease_start", "lease_end", "lease_notes" }, "properties"),
         ["requests"] = ("Requests CSV|*.csv",
             new[] { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone", "retry_later", "notes", "cancel_reason" }, "requests"),
     };
@@ -262,6 +262,7 @@ public class ImportExportTab : UserControl
         int cRent = Csv.FindCol(header, "rent");
         int cDue = Csv.FindCol(header, "due_day");
         int cLease = Csv.FindCol(header, "lease_end");
+        int cLeaseStart = Csv.FindCol(header, "lease_start");
         int cLeaseNotes = Csv.FindCol(header, "lease_notes");
         if (cName < 0) return false;
 
@@ -314,6 +315,7 @@ public class ImportExportTab : UserControl
             Rent = rent,
             DueDay = due,
             LeaseEnd = lease,
+            LeaseStart = cLeaseStart >= 0 ? Cell(r, cLeaseStart).Trim() : "",
             LeaseNotes = cLeaseNotes >= 0 ? Cell(r, cLeaseNotes).Trim() : "",
             PetsOk = petsOk,
             PetCount = petCount,
@@ -402,7 +404,7 @@ public class ImportExportTab : UserControl
                     sb.AppendLine(Csv.Row(t.Date, t.PropLabel, t.Kind, t.Category, t.Amount.ToString("0.##", CultureInfo.InvariantCulture), t.Note));
                 break;
             case "properties":
-                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,pet_rent,late_fee,due_day,security_deposit,pets_ok,pet_count,pet_deposit,track_rent,lease_end,lease_notes");
+                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,pet_rent,late_fee,due_day,security_deposit,pets_ok,pet_count,pet_deposit,track_rent,lease_start,lease_end,lease_notes");
                 foreach (var p in Db.ListProps())
                     sb.AppendLine(Csv.Row(p.Name, p.Unit, p.Tenant, p.ContactName, p.ContactPhone, p.StateId,
                         p.Rent.ToString("0.##", CultureInfo.InvariantCulture),
@@ -413,7 +415,7 @@ public class ImportExportTab : UserControl
                         p.PetsOk ? "yes" : "no", p.PetCount,
                         p.PetDeposit.ToString("0.##", CultureInfo.InvariantCulture),
                         p.TrackRent ? "yes" : "no",
-                        p.LeaseEnd, p.LeaseNotes));
+                        p.LeaseStart, p.LeaseEnd, p.LeaseNotes));
                 break;
             case "requests":
                 sb.AppendLine("created,property,kind,description,status,contact_name,contact_phone,company,handyman_name,handyman_phone,retry_later,notes,cancel_reason");
@@ -448,7 +450,7 @@ public class ImportExportTab : UserControl
                 name = p.Name, unit = p.Unit, tenant = p.Tenant,
                 contact_name = p.ContactName, contact_phone = p.ContactPhone,
                 state_id = p.StateId, lease_notes = p.LeaseNotes,
-                rent = p.Rent, due_day = p.DueDay, lease_end = p.LeaseEnd,
+                rent = p.Rent, due_day = p.DueDay, lease_end = p.LeaseEnd, lease_start = p.LeaseStart,
                 pets_ok = p.PetsOk, pet_count = p.PetCount,
                 pet_rent = p.PetRent, pet_deposit = p.PetDeposit,
                 security_deposit = p.SecurityDeposit, track_rent = p.TrackRent, late_fee = p.LateFee,
@@ -502,7 +504,7 @@ public class ImportExportTab : UserControl
                     Name = p.name, Unit = p.unit, Tenant = p.tenant,
                     ContactName = p.contact_name, ContactPhone = p.contact_phone,
                     StateId = p.state_id, LeaseNotes = p.lease_notes,
-                    Rent = p.rent, DueDay = p.due_day, LeaseEnd = p.lease_end,
+                    Rent = p.rent, DueDay = p.due_day, LeaseEnd = p.lease_end, LeaseStart = p.lease_start,
                     PetsOk = p.pets_ok, PetCount = p.pet_count,
                     PetRent = p.pet_rent, PetDeposit = p.pet_deposit,
                     SecurityDeposit = p.security_deposit, TrackRent = p.track_rent, LateFee = p.late_fee,

@@ -19,10 +19,15 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.7", head: true, big: true);
+        Add(tlp, "🐾 LedgerCat v1.2.8", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.2.8: LAST MONTH's rent now has its own column, ported from StorageCat — " +
+                 "green Paid, red DUE, and a fresh move-in (Lease start set) never shows as owing last month. " +
+                 "Recording rent now suggests last month's unpaid balance too. Plus: every date box has a " +
+                 "calendar picker beside it, and double-clicking a 📝 note cell edits the note right from the grid.", muted: true);
 
         Add(tlp, "New in v1.2.7: every tab now reloads the moment you switch to it — record rent on the " +
                  "Money tab and the property page shows Paid ✓ (and the green glow) as soon as you click " +

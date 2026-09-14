@@ -14,6 +14,7 @@ public class Property
     public decimal Rent;
     public int DueDay = 1;
     public string LeaseEnd = "";
+    public string LeaseStart = ""; // v1.2.8 (Dad): when rent tracking starts — keeps a fresh move-in from owing last month
     public string ContactName = "";
     public string ContactPhone = "";
     public string StateId = "";
@@ -97,7 +98,7 @@ public static class Db
 CREATE TABLE IF NOT EXISTS properties(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL, unit TEXT DEFAULT '', tenant TEXT DEFAULT '',
-  rent REAL DEFAULT 0, due_day INTEGER DEFAULT 1, lease_end TEXT DEFAULT '',
+  rent REAL DEFAULT 0, due_day INTEGER DEFAULT 1, lease_end TEXT DEFAULT '', lease_start TEXT DEFAULT '',
   contact_name TEXT DEFAULT '', contact_phone TEXT DEFAULT '',
   state_id TEXT DEFAULT '', lease_notes TEXT DEFAULT '',
   pets_ok INTEGER DEFAULT 0, pet_count INTEGER DEFAULT 0, pet_rent REAL DEFAULT 0,
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         EnsureColumn(con, "properties", "security_deposit REAL DEFAULT 0");
         EnsureColumn(con, "properties", "track_rent INTEGER DEFAULT 1");
         EnsureColumn(con, "properties", "late_fee REAL DEFAULT 0");
+        EnsureColumn(con, "properties", "lease_start TEXT DEFAULT ''"); // v1.2.8 (Dad): last-month tracking needs the lease start
         EnsureColumn(con, "transactions", "deleted INTEGER DEFAULT 0");
         EnsureColumn(con, "requests", "status TEXT DEFAULT 'open'");
         EnsureColumn(con, "requests", "contact_name TEXT DEFAULT ''");
@@ -184,7 +186,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
     // ---------- properties ----------
 
     const string PropCols = "id,name,unit,tenant,rent,due_day,lease_end,contact_name,contact_phone,state_id,lease_notes," +
-                            "pets_ok,pet_count,pet_rent,pet_deposit,security_deposit,track_rent,late_fee,deleted";
+                            "pets_ok,pet_count,pet_rent,pet_deposit,security_deposit,track_rent,late_fee,deleted,lease_start";
 
     static Property ReadProp(SqliteDataReader r) => new()
     {
@@ -207,6 +209,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         TrackRent = r.IsDBNull(16) || ToInt(r[16]) != 0, // older rows default to tracked
         LateFee = ToDec(r[17]),
         Deleted = Bool(r[18]),
+        LeaseStart = Str(r[19]),
     };
 
     public static List<Property> ListProps(bool deleted = false)
@@ -227,14 +230,14 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         using var cmd = con.CreateCommand();
         if (p.Id == 0)
         {
-            cmd.CommandText = @"INSERT INTO properties(name,unit,tenant,rent,due_day,lease_end,
+            cmd.CommandText = @"INSERT INTO properties(name,unit,tenant,rent,due_day,lease_end,lease_start,
                     contact_name,contact_phone,state_id,lease_notes,
                     pets_ok,pet_count,pet_rent,pet_deposit,security_deposit,track_rent,late_fee,deleted)
-                VALUES($n,$u,$t,$r,$d,$l,$cn,$cp,$sid,$ln,$po,$pc,$pr,$pd,$sd,$tr,$lf,$del); SELECT last_insert_rowid();";
+                VALUES($n,$u,$t,$r,$d,$l,$ls,$cn,$cp,$sid,$ln,$po,$pc,$pr,$pd,$sd,$tr,$lf,$del); SELECT last_insert_rowid();";
         }
         else
         {
-            cmd.CommandText = @"UPDATE properties SET name=$n, unit=$u, tenant=$t, rent=$r, due_day=$d, lease_end=$l,
+            cmd.CommandText = @"UPDATE properties SET name=$n, unit=$u, tenant=$t, rent=$r, due_day=$d, lease_end=$l, lease_start=$ls,
                     contact_name=$cn, contact_phone=$cp, state_id=$sid, lease_notes=$ln,
                     pets_ok=$po, pet_count=$pc, pet_rent=$pr, pet_deposit=$pd, security_deposit=$sd,
                     track_rent=$tr, late_fee=$lf, deleted=$del
@@ -247,6 +250,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         cmd.Parameters.AddWithValue("$r", Num(p.Rent));
         cmd.Parameters.AddWithValue("$d", p.DueDay);
         cmd.Parameters.AddWithValue("$l", p.LeaseEnd);
+        cmd.Parameters.AddWithValue("$ls", p.LeaseStart);
         cmd.Parameters.AddWithValue("$cn", p.ContactName);
         cmd.Parameters.AddWithValue("$cp", p.ContactPhone);
         cmd.Parameters.AddWithValue("$sid", p.StateId);
@@ -279,6 +283,38 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         using var con = Open();
         using var cmd = con.CreateCommand();
         cmd.CommandText = "UPDATE properties SET deleted=0 WHERE deleted=1";
+        cmd.ExecuteNonQuery();
+    }
+
+    // v1.2.8 (Dad): quick note editing straight from the grid — double-click the 📝 cell,
+    // no full dialog needed. Each only touches its own column.
+    public static void SetPropNotes(long id, string notes)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE properties SET lease_notes=$v WHERE id=$id";
+        cmd.Parameters.AddWithValue("$v", notes);
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void SetTxnNote(long id, string note)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE transactions SET note=$v WHERE id=$id";
+        cmd.Parameters.AddWithValue("$v", note);
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void SetReqNotes(long id, string notes)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE requests SET notes=$v WHERE id=$id";
+        cmd.Parameters.AddWithValue("$v", notes);
+        cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
     }
 

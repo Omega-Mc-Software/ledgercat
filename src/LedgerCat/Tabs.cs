@@ -33,6 +33,44 @@ public static class Ui
     public static bool ParseDate(string? s, out DateOnly d) =>
         DateOnly.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out d);
 
+    // v1.2.8 (StorageCat port, Dad): a typed date box with a calendar picker beside it.
+    // Either one edits the same value — type it or pick it.
+    public static Panel DateWithPicker(TextBox tb, int textWidth = 166)
+    {
+        bool syncing = false;
+        var dtp = new DateTimePicker
+        {
+            Format = DateTimePickerFormat.Short,
+            Width = 110,
+            Left = textWidth + 6,
+            Top = 1,
+        };
+        tb.Width = textWidth;
+        tb.TextChanged += (_, _) =>
+        {
+            if (syncing) return;
+            if (ParseDate(tb.Text, out var d))
+            {
+                syncing = true;
+                dtp.Value = d.ToDateTime(TimeOnly.MinValue);
+                syncing = false;
+            }
+        };
+        dtp.ValueChanged += (_, _) =>
+        {
+            if (syncing) return;
+            syncing = true;
+            tb.Text = dtp.Value.ToString("yyyy-MM-dd");
+            syncing = false;
+        };
+        if (ParseDate(tb.Text, out var d0))
+            dtp.Value = d0.ToDateTime(TimeOnly.MinValue);
+        var p = new Panel { Width = textWidth + 6 + 110, Height = 27, Margin = new Padding(0) };
+        p.Controls.Add(tb);
+        p.Controls.Add(dtp);
+        return p;
+    }
+
     public static bool ParseMoney(string? s, out decimal v)
     {
         v = 0;
@@ -176,6 +214,7 @@ public class PropertiesTab : UserControl
         grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Due day", 70, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Rent this month", 110, DataGridViewContentAlignment.MiddleRight));
+        grid.Columns.Add(Ui.Col("Last month", 90, DataGridViewContentAlignment.MiddleRight)); // v1.2.8 (Dad): last month's rent, ported from StorageCat
         grid.Columns.Add(Ui.Col("Security dep", 95, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Rent", 85, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Pet fee", 80, DataGridViewContentAlignment.MiddleRight));
@@ -183,13 +222,14 @@ public class PropertiesTab : UserControl
         grid.Columns.Add(Ui.Col("Total due/mo", 95, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Lease ends", 100, DataGridViewContentAlignment.MiddleRight));
         grid.Columns.Add(Ui.Col("Days left", 80, DataGridViewContentAlignment.MiddleRight));
-        // v1.2.4 (Dad): a little box that says "this property has notes — open Edit to read them"
+        // v1.2.4 (Dad): a little box that says "this property has notes"
         // v1.2.5 (Dad): fixed width — the old Fill mode made scrolling right stop before it
+        // v1.2.8 (Dad): double-click it to edit the notes right there
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = "Notes",
             Width = 70,
-            ToolTipText = "📝 means this property has notes saved under Edit",
+            ToolTipText = "📝 means this property has notes — double-click here to read or edit them",
         });
 
         delGrid.Columns.Add(Ui.Col("Property", 220));
@@ -215,7 +255,14 @@ public class PropertiesTab : UserControl
         Controls.Add(bar);
         Controls.Add(warnLabel);
 
-        grid.CellDoubleClick += (_, _) => EditSelected();
+        grid.CellDoubleClick += (s, e) =>
+        {
+            // v1.2.8 (Dad): double-click the 📝 to edit the note right from the grid — no full dialog.
+            // Notes is column 14 (Last month was inserted at 6).
+            if (e.ColumnIndex == 14 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+                QuickEditNotes(id);
+            else EditSelected();
+        };
         Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
         Ui.ClickAgainClears(delGrid);
 
@@ -232,6 +279,19 @@ public class PropertiesTab : UserControl
         if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.T != null)
         {
             Db.SaveTxn(dlg.T);
+            RefreshData();
+        }
+    }
+
+    // v1.2.8 (Dad): double-click the 📝 cell — write the note without opening the whole property.
+    void QuickEditNotes(long id)
+    {
+        var p = Db.ListProps().FirstOrDefault(x => x.Id == id);
+        if (p == null) return;
+        using var dlg = new NoteDialog("Notes — " + p.Label, p.LeaseNotes);
+        if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+        {
+            Db.SetPropNotes(id, dlg.NoteText.Trim());
             RefreshData();
         }
     }
@@ -305,6 +365,7 @@ public class PropertiesTab : UserControl
             .Where(t => t.Kind == "rent" && t.PropertyId != null && t.Date.StartsWith(monthKey))
             .Select(t => t.PropertyId!.Value)
             .ToHashSet();
+        var allTxns = Db.ListTxns(); // v1.2.8 (Dad): last-month status needs the full rent history
 
         foreach (var p in Db.ListProps())
         {
@@ -340,12 +401,16 @@ public class PropertiesTab : UserControl
                 else rentStatus = Theme.Money(p.TotalRentDue); // v1.2.5 (Dad): show what's owed, not the due day
             }
 
+            // v1.2.8 (Dad): last month's rent status — a fresh move-in (LeaseStart set) never owes last month
+            string prev = Billing.PrevMonthStatus(p, allTxns, today);
+            string prevCell = prev.Length > 0 ? prev : "—";
+
             string pets = !p.PetsOk ? "No"
                 : p.PetCount > 0 ? $"Yes ({p.PetCount})"
                 : "Yes";
 
             var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact, pets,
-                p.DueDay.ToString(), rentStatus,
+                p.DueDay.ToString(), rentStatus, prevCell,
                 p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
                 Theme.Money(p.Rent),
                 p.PetRent > 0 ? Theme.Money(p.PetRent) : "—",
@@ -364,6 +429,9 @@ public class PropertiesTab : UserControl
                 row.DefaultCellStyle.SelectionForeColor = Color.White;
             }
             else if (late) row.Cells[5].Style.ForeColor = Theme.Danger;
+            // v1.2.8 (Dad): last month gets its own traffic light — green paid, red owed
+            if (prev == "Paid") row.Cells[6].Style.ForeColor = Theme.Good;
+            else if (prev == "DUE") row.Cells[6].Style.ForeColor = Theme.Danger;
             if (warn && !paid)
             {
                 // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
@@ -463,7 +531,14 @@ public class MoneyTab : UserControl
         Controls.Add(bar);
         Controls.Add(summary);
 
-        grid.CellDoubleClick += (_, _) => EditSelected(); // edit, not delete — deletes are deliberate
+        grid.CellDoubleClick += (s, e) =>
+        {
+            // v1.2.8 (Dad): double-click the Note cell to edit it right from the grid.
+            // Still edit, not delete — deletes are deliberate.
+            if (e.ColumnIndex == 5 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+                QuickEditTxnNote(id);
+            else EditSelected();
+        };
         Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
         Ui.ClickAgainClears(delGrid);
 
@@ -503,6 +578,19 @@ public class MoneyTab : UserControl
         {
             dlg.T.Id = t.Id;
             Db.SaveTxn(dlg.T);
+            RefreshData();
+        }
+    }
+
+    // v1.2.8 (Dad): double-click the Note cell — fix a typo without opening the whole entry.
+    void QuickEditTxnNote(long id)
+    {
+        var t = Db.ListTxns().FirstOrDefault(x => x.Id == id);
+        if (t == null) return;
+        using var dlg = new NoteDialog("Note — " + t.PropLabel + ", " + t.Date, t.Note);
+        if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+        {
+            Db.SetTxnNote(id, dlg.NoteText.Trim());
             RefreshData();
         }
     }
@@ -679,7 +767,14 @@ public class RequestsTab : UserControl
         Controls.Add(bar);
         Controls.Add(hint);
 
-        grid.CellDoubleClick += (_, _) => EditSelected();
+        grid.CellDoubleClick += (s, e) =>
+        {
+            // v1.2.8 (Dad): double-click the Notes cell to edit notes right from the grid.
+            // Notes is column 8. The cancel reason stays on the request — this edits only notes.
+            if (e.ColumnIndex == 8 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+                QuickEditReqNotes(id);
+            else EditSelected();
+        };
         Ui.ClickAgainClears(grid); // v1.2.5 (Dad): clicking a highlighted row again lets it go
         Ui.ClickAgainClears(delGrid);
 
@@ -727,6 +822,19 @@ public class RequestsTab : UserControl
             dlg.Q.Status = q.Status;
             dlg.Q.CancelReason = q.CancelReason; // kept from the cancel popup; edited status only via Open/Done / Cancel req
             Db.SaveReq(dlg.Q);
+            RefreshData();
+        }
+    }
+
+    // v1.2.8 (Dad): double-click the Notes cell — jot it down without opening the whole request.
+    void QuickEditReqNotes(long id)
+    {
+        var q = Db.ListReqs().FirstOrDefault(x => x.Id == id);
+        if (q == null) return;
+        using var dlg = new NoteDialog("Notes — " + q.PropLabel + ", " + q.Created, q.Notes);
+        if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+        {
+            Db.SetReqNotes(id, dlg.NoteText.Trim());
             RefreshData();
         }
     }

@@ -26,7 +26,7 @@ public class MainForm : Form
 
     public MainForm()
     {
-        Text = "LedgerCat v1.2.7 — by Neko Omega";
+        Text = "LedgerCat v1.2.8 — by Neko Omega";
         Width = 1120;
         Height = 720;
         MinimumSize = new System.Drawing.Size(900, 600);
