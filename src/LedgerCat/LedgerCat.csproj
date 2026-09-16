@@ -6,10 +6,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>LedgerCat</AssemblyName>
+    <AssemblyName>LedgerPaw</AssemblyName>
     <RootNamespace>LedgerCat</RootNamespace>
     <Version>1.2.8</Version>
-    <Product>LedgerCat</Product>
+    <Product>LedgerPaw</Product>
     <Authors>Neko Omega</Authors>
     <Description>Small-landlord bookkeeping that stays small.</Description>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
