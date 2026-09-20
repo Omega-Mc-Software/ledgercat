@@ -30,7 +30,7 @@ jobs:
         id: sha
         shell: pwsh
         run: |
-          $exe = Get-ChildItem src/LedgerCat/bin/Release/net8.0-windows/win-x64/publish/LedgerCat.exe
+          $exe = Get-ChildItem src/LedgerCat/bin/Release/net8.0-windows/win-x64/publish/LedgerPaw.exe
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
           "hash=$hash" >> $env:GITHUB_OUTPUT
           "exe=$($exe.FullName)" >> $env:GITHUB_OUTPUT
