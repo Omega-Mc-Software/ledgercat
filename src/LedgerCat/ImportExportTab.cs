@@ -83,9 +83,11 @@ public class ImportExportTab : UserControl
         flow.Add(Btn("Import transactions CSV", 260, (_, _) => ImportCsv("transactions")));
         flow.Add(Btn("Import properties CSV", 260, (_, _) => ImportCsv("properties")));
         flow.Add(Btn("Import requests CSV", 260, (_, _) => ImportCsv("requests")));
+        flow.Add(Btn("Import waitlist CSV", 260, (_, _) => ImportCsv("waitlist")));
         flow.Add(Btn("Export transactions CSV", 260, (_, _) => ExportCsv("transactions")));
         flow.Add(Btn("Export properties CSV", 260, (_, _) => ExportCsv("properties")));
         flow.Add(Btn("Export requests CSV", 260, (_, _) => ExportCsv("requests")));
+        flow.Add(Btn("Export waitlist CSV", 260, (_, _) => ExportCsv("waitlist")));
         flow.Add(Spacer());
 
         flow.Add(Head("Full backup (JSON) — everything in one file"));
@@ -150,6 +152,19 @@ public class ImportExportTab : UserControl
             new[] { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "pet_rent", "late_fee", "due_day", "security_deposit", "pets_ok", "pet_count", "pet_deposit", "track_rent", "lease_start", "lease_end", "lease_notes" }, "properties"),
         ["requests"] = ("Requests CSV|*.csv",
             new[] { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone", "retry_later", "notes", "cancel_reason" }, "requests"),
+        ["waitlist"] = ("Waitlist CSV|*.csv",
+            new[] { "created", "name", "phone", "email", "desired", "status", "notes" }, "waitlist"),
+    };
+
+    static readonly Dictionary<string, string[]> Aliases = new()
+    {
+        ["name"] = new[] { "property", "address", "building" },
+        ["tenant"] = new[] { "tenant_name", "renter" },
+        ["contact_phone"] = new[] { "phone", "mobile" },
+        ["rent"] = new[] { "amount", "monthly_rent" },
+        ["date"] = new[] { "txn_date", "paid" },
+        ["created"] = new[] { "date" },
+        ["description"] = new[] { "desc", "request", "issue" },
     };
 
     void ImportCsv(string kindKey)
@@ -167,16 +182,24 @@ public class ImportExportTab : UserControl
                 return;
             }
             var header = rows[0];
+            var targets = CsvKinds[kindKey].header;
+            using var mapDlg = new CsvMapDialog(header, targets, Aliases);
+            if (mapDlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+
+            ApplyUnmappedUserColumns(kindKey, header, mapDlg);
+
             int ok = 0, skipped = 0;
             var props = Db.ListProps();
+            var mappedHeader = RemapHeader(header, mapDlg.Map, targets);
 
             foreach (var r in rows.Skip(1))
             {
                 bool added = kindKey switch
                 {
-                    "transactions" => ImportTxnRow(header, r, ref props),
-                    "properties" => ImportPropRow(header, r, ref props),
-                    "requests" => ImportReqRow(header, r, ref props),
+                    "transactions" => ImportTxnRow(mappedHeader, r, ref props, mapDlg.Map),
+                    "properties" => ImportPropRowMapped(mappedHeader, r, ref props, mapDlg.Map),
+                    "requests" => ImportReqRow(mappedHeader, r, ref props, mapDlg.Map),
+                    "waitlist" => ImportWaitRow(mappedHeader, r, mapDlg.Map),
                     _ => false,
                 };
                 if (added) ok++; else skipped++;
@@ -191,6 +214,68 @@ public class ImportExportTab : UserControl
             MessageBox.Show("Could not import that file:\n" + ex.Message, "Import failed",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    static void ApplyUnmappedUserColumns(string kindKey, string[] header, CsvMapDialog mapDlg)
+    {
+        string settingKey;
+        string[] coreKeys;
+        Dictionary<string, (string header, int width)> meta;
+        switch (kindKey)
+        {
+            case "properties": settingKey = "prop_grid_layout"; coreKeys = ColStore.PropCoreKeys; meta = ColStore.PropCoreMeta; break;
+            case "transactions": settingKey = "money_grid_layout"; coreKeys = ColStore.MoneyCoreKeys; meta = ColStore.MoneyCoreMeta; break;
+            case "requests": settingKey = "req_grid_layout"; coreKeys = ColStore.ReqCoreKeys; meta = ColStore.ReqCoreMeta; break;
+            case "waitlist": settingKey = "wait_grid_layout"; coreKeys = ColStore.WaitCoreKeys; meta = ColStore.WaitCoreMeta; break;
+            default: return;
+        }
+        var mappedIdx = mapDlg.Map.Values.ToHashSet();
+        var layout = ColStore.Load(settingKey, coreKeys, meta);
+        var existingByHeader = layout.Columns
+            .Where(c => !c.Core)
+            .GroupBy(c => c.Header, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
+        var coreByHeader = meta.ToDictionary(kv => kv.Value.header, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
+        bool layoutDirty = false;
+        for (int i = 0; i < header.Length; i++)
+        {
+            if (mappedIdx.Contains(i)) continue;
+            var h = header[i].Trim();
+            if (h.Length == 0) continue;
+            if (existingByHeader.TryGetValue(h, out var existingKey))
+            {
+                mapDlg.Map["user:" + existingKey] = i;
+                continue;
+            }
+            if (coreByHeader.TryGetValue(h, out var coreKey) && !mapDlg.Map.ContainsKey(coreKey))
+            {
+                mapDlg.Map[coreKey] = i;
+                mappedIdx.Add(i);
+                continue;
+            }
+            if (!mapDlg.CreateUnmapped) continue;
+            if (ColStore.HeaderTaken(layout, h))
+                ColStore.BumpOldName(layout, h);
+            var def = ColStore.AddUserColumnNoPrompt(layout, h);
+            layoutDirty = true;
+            existingByHeader[h] = def.Key;
+            mapDlg.Map["user:" + def.Key] = i;
+        }
+        if (layoutDirty) ColStore.Save(settingKey, layout);
+    }
+
+    static Dictionary<string, int> UserCols(Dictionary<string, int> map) =>
+        map.Where(kv => kv.Key.StartsWith("user:")).ToDictionary(kv => kv.Key[5..], kv => kv.Value);
+
+    static string[] RemapHeader(string[] original, Dictionary<string, int> map, string[] targets)
+    {
+        var h = (string[])original.Clone();
+        foreach (var t in targets)
+        {
+            if (!map.TryGetValue(t, out var idx)) continue;
+            if (idx >= 0 && idx < h.Length) h[idx] = t;
+        }
+        return h;
     }
 
     long? ResolveProperty(string raw, ref List<Property> props)
@@ -221,8 +306,9 @@ public class ImportExportTab : UserControl
         return null;
     }
 
-    bool ImportTxnRow(string[] header, string[] r, ref List<Property> props)
+    bool ImportTxnRow(string[] header, string[] r, ref List<Property> props, Dictionary<string, int> map)
     {
+        var mapUser = UserCols(map);
         int cDate = Csv.FindCol(header, "date");
         int cProp = Csv.FindCol(header, "property");
         int cKind = Csv.FindCol(header, "kind");
@@ -239,7 +325,7 @@ public class ImportExportTab : UserControl
         string kindRaw = Cell(r, cKind).Trim().ToLowerInvariant();
         string kind = kindRaw.StartsWith("rent") || kindRaw.StartsWith("in") ? "rent" : "expense";
 
-        Db.SaveTxn(new Txn
+        var t = new Txn
         {
             Date = d.ToString("yyyy-MM-dd"),
             PropertyId = cProp >= 0 ? ResolveProperty(Cell(r, cProp), ref props) : null,
@@ -247,11 +333,14 @@ public class ImportExportTab : UserControl
             Category = cCat >= 0 ? Cell(r, cCat).Trim() : "",
             Amount = amount,
             Note = cNote >= 0 ? Cell(r, cNote).Trim() : "",
-        });
+        };
+        foreach (var kv in mapUser)
+            if (kv.Value >= 0) t.Extra[kv.Key] = Cell(r, kv.Value).Trim();
+        Db.SaveTxn(t);
         return true;
     }
 
-    bool ImportPropRow(string[] header, string[] r, ref List<Property> props)
+    bool ImportPropRow(string[] header, string[] r, ref List<Property> props, Dictionary<string, int> mapUser)
     {
         int cName = Csv.FindCol(header, "name");
         int cUnit = Csv.FindCol(header, "unit");
@@ -270,9 +359,17 @@ public class ImportExportTab : UserControl
         if (name.Length == 0) return false;
 
         string unit = cUnit >= 0 ? Cell(r, cUnit).Trim() : "";
-        if (props.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                        && x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)))
-            return false; // already exists
+        var existing = props.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+                        && x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            foreach (var kv in mapUser)
+            {
+                if (kv.Value >= 0) existing.Extra[kv.Key] = Cell(r, kv.Value).Trim();
+            }
+            if (mapUser.Count > 0) Db.SaveProp(existing);
+            return mapUser.Count > 0;
+        }
 
         var rent = cRent >= 0 ? ParseAmountCell(Cell(r, cRent)) ?? 0m : 0m;
         var petRent = Csv.FindCol(header, "pet_rent") is { } cPR && cPR >= 0 ? ParseAmountCell(Cell(r, cPR)) ?? 0m : 0m;
@@ -325,13 +422,27 @@ public class ImportExportTab : UserControl
             TrackRent = trackRent,
             LateFee = lateFee,
         };
+        foreach (var kv in mapUser)
+        {
+            if (kv.Value >= 0) np.Extra[kv.Key] = Cell(r, kv.Value).Trim();
+        }
         np.Id = Db.SaveProp(np);
         props.Add(np);
         return true;
     }
 
-    bool ImportReqRow(string[] header, string[] r, ref List<Property> props)
+    bool ImportPropRowMapped(string[] header, string[] r, ref List<Property> props, Dictionary<string, int> map)
     {
+        var mapUser = map.Where(kv => kv.Key.StartsWith("user:")).ToDictionary(kv => kv.Key[5..], kv => kv.Value);
+        return ImportPropRow(header, r, ref props, mapUser);
+    }
+
+    bool ImportPropRow(string[] header, string[] r, ref List<Property> props)
+        => ImportPropRow(header, r, ref props, new Dictionary<string, int>());
+
+    bool ImportReqRow(string[] header, string[] r, ref List<Property> props, Dictionary<string, int> map)
+    {
+        var mapUser = UserCols(map);
         int cDate = Csv.FindCol(header, "created");
         int cProp = Csv.FindCol(header, "property");
         int cKind = Csv.FindCol(header, "kind");
@@ -361,7 +472,7 @@ public class ImportExportTab : UserControl
             _ => "open",
         };
 
-        Db.SaveReq(new Req
+        var q = new Req
         {
             Created = d.ToString("yyyy-MM-dd"),
             PropertyId = cProp >= 0 ? ResolveProperty(Cell(r, cProp), ref props) : null,
@@ -376,7 +487,42 @@ public class ImportExportTab : UserControl
             RetryLater = cRetry >= 0 ? Cell(r, cRetry).Trim() : "",
             Notes = cNotes >= 0 ? Cell(r, cNotes).Trim() : "",
             CancelReason = cCancel >= 0 ? Cell(r, cCancel).Trim() : "",
-        });
+        };
+        foreach (var kv in mapUser)
+            if (kv.Value >= 0) q.Extra[kv.Key] = Cell(r, kv.Value).Trim();
+        Db.SaveReq(q);
+        return true;
+    }
+
+    bool ImportWaitRow(string[] header, string[] r, Dictionary<string, int> map)
+    {
+        var mapUser = UserCols(map);
+        int cName = Csv.FindCol(header, "name");
+        if (cName < 0) return false;
+        string name = Cell(r, cName).Trim();
+        if (name.Length == 0) return false;
+        int cDate = Csv.FindCol(header, "created");
+        int cPhone = Csv.FindCol(header, "phone");
+        int cEmail = Csv.FindCol(header, "email");
+        int cDesired = Csv.FindCol(header, "desired");
+        int cStatus = Csv.FindCol(header, "status");
+        int cNotes = Csv.FindCol(header, "notes");
+        string created = cDate >= 0 ? Cell(r, cDate).Trim() : Ui.Today();
+        if (created.Length > 0 && !Ui.ParseDate(created, out _)) created = Ui.Today();
+        var w = new Db.WaitRow
+        {
+            Created = created.Length > 0 ? created : Ui.Today(),
+            Name = name,
+            Phone = cPhone >= 0 ? Cell(r, cPhone).Trim() : "",
+            Email = cEmail >= 0 ? Cell(r, cEmail).Trim() : "",
+            Desired = cDesired >= 0 ? Cell(r, cDesired).Trim() : "",
+            Status = cStatus >= 0 ? Cell(r, cStatus).Trim().ToLowerInvariant() : "open",
+            Notes = cNotes >= 0 ? Cell(r, cNotes).Trim() : "",
+        };
+        if (w.Status is not ("open" or "placed" or "canceled")) w.Status = "open";
+        foreach (var kv in mapUser)
+            if (kv.Value >= 0) w.Extra[kv.Key] = Cell(r, kv.Value).Trim();
+        Db.SaveWait(w);
         return true;
     }
 
@@ -399,14 +545,29 @@ public class ImportExportTab : UserControl
         switch (kindKey)
         {
             case "transactions":
-                sb.AppendLine("date,property,kind,category,amount,note");
+            {
+                var extras = ColStore.Load("money_grid_layout", ColStore.MoneyCoreKeys, ColStore.MoneyCoreMeta).Columns.Where(c => !c.Core).ToList();
+                var heads = new List<object> { "date", "property", "kind", "category", "amount", "note" };
+                foreach (var e in extras) heads.Add(e.Header);
+                sb.AppendLine(Csv.Row(heads.ToArray()));
                 foreach (var t in Db.ListTxns())
-                    sb.AppendLine(Csv.Row(t.Date, t.PropLabel, t.Kind, t.Category, t.Amount.ToString("0.##", CultureInfo.InvariantCulture), t.Note));
+                {
+                    var cells = new List<object> { t.Date, t.PropLabel, t.Kind, t.Category, t.Amount.ToString("0.##", CultureInfo.InvariantCulture), t.Note };
+                    foreach (var e in extras) cells.Add(t.Extra.TryGetValue(e.Key, out var v) ? v : "");
+                    sb.AppendLine(Csv.Row(cells.ToArray()));
+                }
                 break;
+            }
             case "properties":
-                sb.AppendLine("name,unit,tenant,contact_name,contact_phone,state_id,rent,pet_rent,late_fee,due_day,security_deposit,pets_ok,pet_count,pet_deposit,track_rent,lease_start,lease_end,lease_notes");
+            {
+                var layout = ColStore.Load("prop_grid_layout", ColStore.PropCoreKeys, ColStore.PropCoreMeta);
+                var extras = layout.Columns.Where(c => !c.Core).ToList();
+                var heads = new List<object> { "name", "unit", "tenant", "contact_name", "contact_phone", "state_id", "rent", "pet_rent", "late_fee", "due_day", "security_deposit", "pets_ok", "pet_count", "pet_deposit", "track_rent", "lease_start", "lease_end", "lease_notes" };
+                foreach (var e in extras) heads.Add(e.Header);
+                sb.AppendLine(Csv.Row(heads.ToArray()));
                 foreach (var p in Db.ListProps())
-                    sb.AppendLine(Csv.Row(p.Name, p.Unit, p.Tenant, p.ContactName, p.ContactPhone, p.StateId,
+                {
+                    var cells = new List<object> { p.Name, p.Unit, p.Tenant, p.ContactName, p.ContactPhone, p.StateId,
                         p.Rent.ToString("0.##", CultureInfo.InvariantCulture),
                         p.PetRent.ToString("0.##", CultureInfo.InvariantCulture),
                         p.LateFee.ToString("0.##", CultureInfo.InvariantCulture),
@@ -415,15 +576,43 @@ public class ImportExportTab : UserControl
                         p.PetsOk ? "yes" : "no", p.PetCount,
                         p.PetDeposit.ToString("0.##", CultureInfo.InvariantCulture),
                         p.TrackRent ? "yes" : "no",
-                        p.LeaseStart, p.LeaseEnd, p.LeaseNotes));
+                        p.LeaseStart, p.LeaseEnd, p.LeaseNotes };
+                    foreach (var e in extras)
+                        cells.Add(p.Extra.TryGetValue(e.Key, out var v) ? v : "");
+                    sb.AppendLine(Csv.Row(cells.ToArray()));
+                }
                 break;
+            }
             case "requests":
-                sb.AppendLine("created,property,kind,description,status,contact_name,contact_phone,company,handyman_name,handyman_phone,retry_later,notes,cancel_reason");
+            {
+                var extras = ColStore.Load("req_grid_layout", ColStore.ReqCoreKeys, ColStore.ReqCoreMeta).Columns.Where(c => !c.Core).ToList();
+                var heads = new List<object> { "created", "property", "kind", "description", "status", "contact_name", "contact_phone", "company", "handyman_name", "handyman_phone", "retry_later", "notes", "cancel_reason" };
+                foreach (var e in extras) heads.Add(e.Header);
+                sb.AppendLine(Csv.Row(heads.ToArray()));
                 foreach (var q in Db.ListReqs())
-                    sb.AppendLine(Csv.Row(q.Created, q.PropLabel, q.Kind, q.Description, q.Status,
+                {
+                    var cells = new List<object> { q.Created, q.PropLabel, q.Kind, q.Description, q.Status,
                         q.ContactName, q.ContactPhone, q.Company, q.HandymanName, q.HandymanPhone,
-                        q.RetryLater, q.Notes, q.CancelReason));
+                        q.RetryLater, q.Notes, q.CancelReason };
+                    foreach (var e in extras) cells.Add(q.Extra.TryGetValue(e.Key, out var v) ? v : "");
+                    sb.AppendLine(Csv.Row(cells.ToArray()));
+                }
                 break;
+            }
+            case "waitlist":
+            {
+                var extras = ColStore.Load("wait_grid_layout", ColStore.WaitCoreKeys, ColStore.WaitCoreMeta).Columns.Where(c => !c.Core).ToList();
+                var heads = new List<object> { "created", "name", "phone", "email", "desired", "status", "notes" };
+                foreach (var e in extras) heads.Add(e.Header);
+                sb.AppendLine(Csv.Row(heads.ToArray()));
+                foreach (var w in Db.ListWait())
+                {
+                    var cells = new List<object> { w.Created, w.Name, w.Phone, w.Email, w.Desired, w.Status, w.Notes };
+                    foreach (var e in extras) cells.Add(w.Extra.TryGetValue(e.Key, out var v) ? v : "");
+                    sb.AppendLine(Csv.Row(cells.ToArray()));
+                }
+                break;
+            }
         }
 
         File.WriteAllText(dlg.FileName, sb.ToString());

@@ -30,15 +30,17 @@ public class PropertyDialog : Form
     readonly TextBox lateFeeT = new() { Width = 240 };
     readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 80 };
     readonly Label totalLbl = new() { AutoSize = true, ForeColor = Theme.Muted };
+    readonly Dictionary<string, TextBox> extraBoxes = new();
 
     public PropertyDialog(Property? existing)
     {
         Text = existing == null ? "Add property" : "Edit property";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(440, 760); // v1.2.8: +40 for the Lease start row
+        ClientSize = new Size(480, 720);
+        MinimumSize = new Size(440, 480);
         Font = Theme.BaseFont;
 
         if (existing != null)
@@ -73,6 +75,7 @@ public class PropertyDialog : Form
             Padding = new Padding(14),
             ColumnCount = 2,
             AutoScroll = true,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -95,14 +98,23 @@ public class PropertyDialog : Form
         AddRow(tlp, "Rent tracking", trackRentC);
         AddRow(tlp, "Late fee $", lateFeeT);
 
-        // v1.2.5 (Dad): the notes box kept hugging the label column — now it gets the whole
-        // dialog width, with its label on its own line above it.
-        var notesLbl = new Label { Text = "Lease / move notes", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
-        tlp.Controls.Add(notesLbl, 0, 18);
-        tlp.Controls.Add(notesT, 0, 19);
-        tlp.SetColumnSpan(notesT, 2);
+        var layout = ColStore.Load("prop_grid_layout", ColStore.PropCoreKeys, ColStore.PropCoreMeta);
+        foreach (var def in layout.Columns.Where(c => !c.Core))
+        {
+            var tb = new TextBox { Width = 240 };
+            if (existing != null && existing.Extra.TryGetValue(def.Key, out var v)) tb.Text = v;
+            extraBoxes[def.Key] = tb;
+            AddRow(tlp, def.Header, tb);
+        }
 
-        tlp.Controls.Add(totalLbl, 1, 16);
+        tlp.Controls.Add(totalLbl);
+        tlp.SetColumnSpan(totalLbl, 2);
+
+        var notesLbl = new Label { Text = "Lease / move notes", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
+        tlp.Controls.Add(notesLbl);
+        tlp.SetColumnSpan(notesLbl, 2);
+        tlp.Controls.Add(notesT);
+        tlp.SetColumnSpan(notesT, 2);
 
         var hint = new Label
         {
@@ -113,11 +125,9 @@ public class PropertyDialog : Form
             Tag = "muted",
             AutoSize = true,
             ForeColor = Theme.Muted,
-            // v1.2.4 (Dad): tips were cut off — an AutoSize label without a maximum width is one
-            // long line that the dialog clips. This makes it wrap onto several lines instead.
-            MaximumSize = new Size(400, 0),
+            MaximumSize = new Size(420, 0),
         };
-        tlp.Controls.Add(hint, 0, 18);
+        tlp.Controls.Add(hint);
         tlp.SetColumnSpan(hint, 2);
 
         var ok = Ui.Btn("Save", 100, (_, _) => Save());
@@ -272,6 +282,8 @@ public class PropertyDialog : Form
         P.PetDeposit = petsC.Checked ? petDep : 0;
         P.TrackRent = trackRentC.Checked;
         P.LateFee = lateFee;
+        foreach (var kv in extraBoxes)
+            P.Extra[kv.Key] = kv.Value.Text.Trim();
         DialogResult = DialogResult.OK;
     }
 }
@@ -289,6 +301,7 @@ public class TxnDialog : Form
     readonly List<Property> props;
     readonly List<long?> propIds = new();
     readonly Txn? existing;
+    readonly Dictionary<string, TextBox> extraBoxes = new();
     bool touchedAmount;
     bool touchedCat;
 
@@ -304,11 +317,12 @@ public class TxnDialog : Form
         Text = editing
             ? (this.kind == "rent" ? "Edit rent entry" : "Edit expense entry")
             : (this.kind == "rent" ? "Record rent (money in)" : "Add expense (money out)");
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(420, 388);
+        ClientSize = new Size(420, 420);
+        MinimumSize = new Size(400, 360);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Date ?? Ui.Today();
@@ -346,6 +360,7 @@ public class TxnDialog : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(14),
             ColumnCount = 2,
+            AutoScroll = true,
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -354,6 +369,14 @@ public class TxnDialog : Form
         AddRow(tlp, "Property", propC);
         AddRow(tlp, "Category", catT);
         AddRow(tlp, "Amount $ *", amountT);
+        var moneyLayout = ColStore.Load("money_grid_layout", ColStore.MoneyCoreKeys, ColStore.MoneyCoreMeta);
+        foreach (var def in moneyLayout.Columns.Where(c => !c.Core))
+        {
+            var tb = new TextBox { Width = 240 };
+            if (existing != null && existing.Extra.TryGetValue(def.Key, out var v)) tb.Text = v;
+            extraBoxes[def.Key] = tb;
+            AddRow(tlp, def.Header, tb);
+        }
 
         // v1.2.5 (Dad): note box gets the whole dialog width, label above it
         var noteLbl = new Label { Text = "Note", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -483,6 +506,8 @@ public class TxnDialog : Form
             Amount = amount,
             Note = noteT.Text.Trim(),
         };
+        foreach (var kv in extraBoxes)
+            T.Extra[kv.Key] = kv.Value.Text.Trim();
         DialogResult = DialogResult.OK;
     }
 }
@@ -504,19 +529,23 @@ public class ReqDialog : Form
     readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 80 };
     readonly List<Property> props;
     readonly List<long?> propIds = new();
+    readonly Dictionary<string, TextBox> extraBoxes = new();
+    readonly Req? existing;
 
     public ReqDialog(List<Property> props) : this(props, null) { }
 
     public ReqDialog(List<Property> props, Req? existing)
     {
         this.props = props;
+        this.existing = existing;
 
         Text = existing == null ? "Add request" : "Edit request";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(440, 678);
+        ClientSize = new Size(440, 700);
+        MinimumSize = new Size(420, 480);
         Font = Theme.BaseFont;
 
         dateT.Text = existing?.Created ?? Ui.Today();
@@ -566,6 +595,14 @@ public class ReqDialog : Form
         AddRow(tlp, "Handyman name", handyNameT);
         AddRow(tlp, "Handyman phone", handyPhoneT);
         AddRow(tlp, "Retry later", retryT);
+        var reqLayout = ColStore.Load("req_grid_layout", ColStore.ReqCoreKeys, ColStore.ReqCoreMeta);
+        foreach (var def in reqLayout.Columns.Where(c => !c.Core))
+        {
+            var tb = new TextBox { Width = 240 };
+            if (existing != null && existing.Extra.TryGetValue(def.Key, out var v)) tb.Text = v;
+            extraBoxes[def.Key] = tb;
+            AddRow(tlp, def.Header, tb);
+        }
 
         // v1.2.5 (Dad): notes box gets the whole dialog width, label above it
         var notesLbl = new Label { Text = "Notes / comments", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -642,6 +679,8 @@ public class ReqDialog : Form
             RetryLater = retryT.Text.Trim(),
             Notes = notesT.Text.Trim(),
         };
+        foreach (var kv in extraBoxes)
+            Q.Extra[kv.Key] = kv.Value.Text.Trim();
         DialogResult = DialogResult.OK;
     }
 }
@@ -742,5 +781,181 @@ public class NoteDialog : Form
         Controls.Add(btns);
         AcceptButton = ok;
         CancelButton = cancel;
+    }
+}
+
+public class WaitDialog : Form
+{
+    public Db.WaitRow W = new();
+    readonly TextBox nameT = new() { Width = 240 };
+    readonly TextBox phoneT = new() { Width = 240 };
+    readonly TextBox emailT = new() { Width = 240 };
+    readonly TextBox desiredT = new() { Width = 240 };
+    readonly TextBox notesT = new() { Width = 240, Multiline = true, Height = 64 };
+    readonly ComboBox statusC = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly Dictionary<string, TextBox> extraBoxes = new();
+
+    public WaitDialog(Db.WaitRow? existing)
+    {
+        Text = existing == null ? "Add waitlist" : "Edit waitlist";
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(420, 400);
+        MinimumSize = new Size(400, 320);
+        Font = Theme.BaseFont;
+        statusC.Items.AddRange(new object[] { "open", "placed", "canceled" });
+        statusC.SelectedIndex = 0;
+        if (existing != null)
+        {
+            W = existing;
+            nameT.Text = W.Name;
+            phoneT.Text = W.Phone;
+            emailT.Text = W.Email;
+            desiredT.Text = W.Desired;
+            notesT.Text = W.Notes;
+            var i = statusC.Items.IndexOf(W.Status);
+            statusC.SelectedIndex = i >= 0 ? i : 0;
+        }
+        var tlp = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2 };
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        void Row(string l, Control c)
+        {
+            tlp.Controls.Add(new Label { Text = l, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft });
+            c.Dock = DockStyle.Fill;
+            tlp.Controls.Add(c);
+        }
+        Row("Name *", nameT);
+        Row("Phone", phoneT);
+        Row("Email", emailT);
+        Row("Desired unit", desiredT);
+        Row("Status", statusC);
+        var waitLayout = ColStore.Load("wait_grid_layout", ColStore.WaitCoreKeys, ColStore.WaitCoreMeta);
+        foreach (var def in waitLayout.Columns.Where(c => !c.Core))
+        {
+            var tb = new TextBox { Width = 240 };
+            if (existing != null && existing.Extra.TryGetValue(def.Key, out var v)) tb.Text = v;
+            extraBoxes[def.Key] = tb;
+            Row(def.Header, tb);
+        }
+        Row("Notes", notesT);
+        var ok = Ui.Btn("Save", 100, (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(nameT.Text))
+            {
+                MessageBox.Show("Needs a name.", "Waitlist");
+                return;
+            }
+            if (W.Created.Length == 0) W.Created = Ui.Today();
+            W.Name = nameT.Text.Trim();
+            W.Phone = phoneT.Text.Trim();
+            W.Email = emailT.Text.Trim();
+            W.Desired = desiredT.Text.Trim();
+            W.Notes = notesT.Text.Trim();
+            W.Status = statusC.SelectedItem?.ToString() ?? "open";
+            foreach (var kv in extraBoxes)
+                W.Extra[kv.Key] = kv.Value.Text.Trim();
+            DialogResult = DialogResult.OK;
+        });
+        var cancel = Ui.Btn("Cancel", 100, (_, _) => DialogResult = DialogResult.Cancel);
+        var btns = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(10) };
+        btns.Controls.Add(cancel);
+        btns.Controls.Add(ok);
+        Controls.Add(tlp);
+        Controls.Add(btns);
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+}
+
+public class CsvMapDialog : Form
+{
+    public Dictionary<string, int> Map = new();
+    public HashSet<string> Skip = new();
+    public bool CreateUnmapped;
+
+    public CsvMapDialog(string[] header, string[] targets, Dictionary<string, string[]> aliases)
+    {
+        Text = "Map CSV columns";
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(580, 680);
+        MinimumSize = new Size(540, 480);
+        Font = Theme.BaseFont;
+
+        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(12) };
+        flow.Controls.Add(new Label { Text = "Match each LedgerPaw field to a column in your file. Skip ones you don't have. Duplicate header names in the file are flagged.", AutoSize = true, MaximumSize = new Size(480, 0), Tag = "muted" });
+
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var dups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < header.Length; i++)
+        {
+            var h = header[i].Trim();
+            if (h.Length == 0) continue;
+            if (seen.ContainsKey(h)) dups.Add(h);
+            else seen[h] = i;
+        }
+        if (dups.Count > 0)
+            flow.Controls.Add(new Label { Text = "Warning: duplicate column names in the file: " + string.Join(", ", dups) + ". The first one wins unless you pick another.", AutoSize = true, ForeColor = Theme.Danger, MaximumSize = new Size(480, 0) });
+
+        var combos = new Dictionary<string, ComboBox>();
+        string[] choices = new[] { "(skip)" }.Concat(header.Select((h, i) => $"{i}: {h}")).ToArray();
+
+        foreach (var t in targets)
+        {
+            var row = new FlowLayoutPanel { Width = 480, Height = 32, FlowDirection = FlowDirection.LeftToRight };
+            row.Controls.Add(new Label { Text = t, Width = 150, TextAlign = ContentAlignment.MiddleLeft });
+            var cb = new ComboBox { Width = 280, DropDownStyle = ComboBoxStyle.DropDownList };
+            cb.Items.AddRange(choices);
+            int auto = AutoMatch(header, t, aliases);
+            cb.SelectedIndex = auto >= 0 ? auto + 1 : 0;
+            combos[t] = cb;
+            row.Controls.Add(cb);
+            flow.Controls.Add(row);
+        }
+
+        var create = new CheckBox { Text = "Create a user column for leftover CSV headers that didn't map", AutoSize = true, Checked = true, MaximumSize = new Size(520, 0) };
+
+        var ok = Ui.Btn("Import", 110, (_, _) =>
+        {
+            Map.Clear(); Skip.Clear();
+            foreach (var kv in combos)
+            {
+                int i = kv.Value.SelectedIndex - 1;
+                if (i < 0) Skip.Add(kv.Key);
+                else Map[kv.Key] = i;
+            }
+            CreateUnmapped = create.Checked;
+            DialogResult = DialogResult.OK;
+        });
+        var cancel = Ui.Btn("Cancel", 100, (_, _) => DialogResult = DialogResult.Cancel);
+        var foot = new Panel { Dock = DockStyle.Bottom, Height = 96, Padding = new Padding(12, 6, 12, 8) };
+        create.Location = new Point(12, 6);
+        var btns = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0) };
+        btns.Controls.Add(cancel);
+        btns.Controls.Add(ok);
+        foot.Controls.Add(create);
+        foot.Controls.Add(btns);
+        Controls.Add(flow);
+        Controls.Add(foot);
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+
+    static int AutoMatch(string[] header, string target, Dictionary<string, string[]> aliases)
+    {
+        var want = new List<string> { target.Replace("_", " "), target };
+        if (aliases.TryGetValue(target, out var extra)) want.AddRange(extra);
+        for (int i = 0; i < header.Length; i++)
+        {
+            var h = header[i].Trim().Trim('"').ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
+            foreach (var w in want)
+                if (h == w.ToLowerInvariant().Replace(" ", "_")) return i;
+        }
+        return -1;
     }
 }

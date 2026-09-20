@@ -8,7 +8,10 @@
     <Nullable>enable</Nullable>
     <AssemblyName>LedgerPaw</AssemblyName>
     <RootNamespace>LedgerCat</RootNamespace>
-    <Version>1.2.8</Version>
+    <Version>1.3.0</Version>
+    <InformationalVersion>1.3.0</InformationalVersion>
+    <FileVersion>1.3.0.0</FileVersion>
+    <AssemblyVersion>1.3.0.0</AssemblyVersion>
     <Product>LedgerPaw</Product>
     <Authors>Neko Omega</Authors>
     <Description>Small-landlord bookkeeping that stays small.</Description>

@@ -19,10 +19,14 @@ public class AboutTab : UserControl
         };
         tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        Add(tlp, "🐾 LedgerCat v1.2.8", head: true, big: true);
+        Add(tlp, "🐾 LedgerPaw v1.3.0", head: true, big: true);
         Add(tlp, "Small-landlord bookkeeping that stays small.", head: true);
         Add(tlp, "One portable exe. One data file. No install, no account, no cloud, no subscription. " +
                  "Your numbers are yours and they live on your own disk.", muted: true);
+
+        Add(tlp, "New in v1.3.0: out of beta. Extra columns on Properties, Money, Requests, and Waitlist (add, drag, hide/show, dialog fields, leftover CSV headers, export). Waitlist CSV import/export. CSV mapping screen. Duplicate rename keeps the old name as name-old. Same data folder as 1.2.8.", muted: true);
+        Add(tlp, "New in v1.3.0-beta5: Money, Requests, and Waitlist get the same extra columns as Properties — Add column, drag, hide/show, edit in the dialog, import leftover CSV headers, export extras. Waitlist has its own CSV import/export.", muted: true);
+        Add(tlp, "New in v1.3.0-beta4: Property add/edit is resizable with a scroll body so extra fields are not clipped. Import leftover CSV headers as user columns (checkbox defaults on). Matching extra columns load on existing properties. Property CSV export includes extra columns.", muted: true);
 
         Add(tlp, "New in v1.2.8: LAST MONTH's rent now has its own column, ported from StorageCat — " +
                  "green Paid, red DUE, and a fresh move-in (Lease start set) never shows as owing last month. " +

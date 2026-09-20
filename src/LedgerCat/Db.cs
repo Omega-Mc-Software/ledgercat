@@ -27,6 +27,7 @@ public class Property
     public bool TrackRent = true;
     public decimal LateFee;
     public bool Deleted;
+    public Dictionary<string, string> Extra = new();
 
     public string Label => string.IsNullOrWhiteSpace(Unit) ? Name : Name + " / " + Unit;
     /// What the tenant owes each month in normal months: base rent + pet rent. Late fees only apply when rent is late.
@@ -44,6 +45,7 @@ public class Txn
     public decimal Amount;
     public string Note = "";
     public bool Deleted;
+    public Dictionary<string, string> Extra = new();
 }
 
 public class Req
@@ -65,6 +67,7 @@ public class Req
     public string RetryLater = ""; // date to come back to this, or free text
     public string Notes = "";
     public bool Deleted;
+    public Dictionary<string, string> Extra = new();
 }
 
 public static class Db
@@ -119,7 +122,37 @@ CREATE TABLE IF NOT EXISTS requests(
   company TEXT DEFAULT '', handyman_name TEXT DEFAULT '', handyman_phone TEXT DEFAULT '',
   cancel_reason TEXT DEFAULT '', retry_later TEXT DEFAULT '', notes TEXT DEFAULT '',
   deleted INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
+CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS property_extra(
+  property_id INTEGER NOT NULL,
+  col_key TEXT NOT NULL,
+  value TEXT DEFAULT '',
+  PRIMARY KEY(property_id, col_key));
+CREATE TABLE IF NOT EXISTS txn_extra(
+  txn_id INTEGER NOT NULL,
+  col_key TEXT NOT NULL,
+  value TEXT DEFAULT '',
+  PRIMARY KEY(txn_id, col_key));
+CREATE TABLE IF NOT EXISTS req_extra(
+  req_id INTEGER NOT NULL,
+  col_key TEXT NOT NULL,
+  value TEXT DEFAULT '',
+  PRIMARY KEY(req_id, col_key));
+CREATE TABLE IF NOT EXISTS wait_extra(
+  wait_id INTEGER NOT NULL,
+  col_key TEXT NOT NULL,
+  value TEXT DEFAULT '',
+  PRIMARY KEY(wait_id, col_key));
+CREATE TABLE IF NOT EXISTS waitlist(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  desired TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',
+  deleted INTEGER DEFAULT 0);";
         cmd.ExecuteNonQuery();
 
         // v1.0.x databases: add the v1.1 columns, then backfill request status from the old done flag.
@@ -147,6 +180,8 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         EnsureColumn(con, "requests", "cancel_reason TEXT DEFAULT ''");
         EnsureColumn(con, "requests", "retry_later TEXT DEFAULT ''");
         EnsureColumn(con, "requests", "notes TEXT DEFAULT ''");
+
+        EnsureColumn(con, "waitlist", "deleted INTEGER DEFAULT 0");
 
         using var fix = con.CreateCommand();
         fix.CommandText = "UPDATE requests SET status='done' WHERE done=1 AND (status IS NULL OR status='' OR status='open')";
@@ -221,7 +256,82 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         cmd.Parameters.AddWithValue("$del", deleted ? 1 : 0);
         using var r = cmd.ExecuteReader();
         while (r.Read()) list.Add(ReadProp(r));
+        AttachExtras(list);
         return list;
+    }
+
+    static void AttachExtras(List<Property> list)
+    {
+        if (list.Count == 0) return;
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT property_id, col_key, value FROM property_extra";
+        using var r = cmd.ExecuteReader();
+        var map = list.ToDictionary(p => p.Id);
+        while (r.Read())
+        {
+            long pid = r.GetInt64(0);
+            if (!map.TryGetValue(pid, out var p)) continue;
+            p.Extra[Str(r[1])] = Str(r[2]);
+        }
+    }
+
+    public static void SetPropExtra(long propertyId, string colKey, string value)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = @"INSERT INTO property_extra(property_id,col_key,value) VALUES($p,$k,$v)
+            ON CONFLICT(property_id,col_key) DO UPDATE SET value=$v";
+        cmd.Parameters.AddWithValue("$p", propertyId);
+        cmd.Parameters.AddWithValue("$k", colKey);
+        cmd.Parameters.AddWithValue("$v", value ?? "");
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void SavePropExtras(long propertyId, Dictionary<string, string> extra)
+    {
+        foreach (var kv in extra)
+            SetPropExtra(propertyId, kv.Key, kv.Value);
+    }
+
+    static void AttachRowExtras<T>(List<T> list, string table, string idCol, Func<T, long> idOf, Action<T, string, string> set)
+    {
+        if (list.Count == 0) return;
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = $"SELECT {idCol}, col_key, value FROM {table}";
+        using var r = cmd.ExecuteReader();
+        var map = list.ToDictionary(idOf);
+        while (r.Read())
+        {
+            long id = r.GetInt64(0);
+            if (!map.TryGetValue(id, out var row)) continue;
+            set(row, Str(r[1]), Str(r[2]));
+        }
+    }
+
+    static void SetRowExtra(string table, string idCol, long id, string colKey, string value)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = $"INSERT INTO {table}({idCol},col_key,value) VALUES($p,$k,$v) ON CONFLICT({idCol},col_key) DO UPDATE SET value=$v";
+        cmd.Parameters.AddWithValue("$p", id);
+        cmd.Parameters.AddWithValue("$k", colKey);
+        cmd.Parameters.AddWithValue("$v", value ?? "");
+        cmd.ExecuteNonQuery();
+    }
+
+    static void SaveRowExtras(string table, string idCol, long id, Dictionary<string, string> extra)
+    {
+        if (id == 0 || extra.Count == 0) return;
+        foreach (var kv in extra) SetRowExtra(table, idCol, id, kv.Key, kv.Value);
+    }
+
+    static long LastInsertId(SqliteConnection con)
+    {
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
     }
 
     public static long SaveProp(Property p)
@@ -264,7 +374,9 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         cmd.Parameters.AddWithValue("$lf", Num(p.LateFee));
         cmd.Parameters.AddWithValue("$del", Flag(p.Deleted));
         var v = cmd.ExecuteScalar();
-        return Convert.ToInt64(v ?? 0L);
+        long id = Convert.ToInt64(v ?? 0L);
+        if (id != 0 && p.Extra.Count > 0) SavePropExtras(id, p.Extra);
+        return id;
     }
 
     /// Soft delete: hides the property but keeps its id so transaction links survive.
@@ -326,6 +438,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         cmd.CommandText = @"
 UPDATE transactions SET property_id=NULL WHERE property_id=$id;
 UPDATE requests SET property_id=NULL WHERE property_id=$id;
+DELETE FROM property_extra WHERE property_id=$id;
 DELETE FROM properties WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
@@ -366,6 +479,7 @@ ORDER BY t.date DESC, t.id DESC";
             string label = r.IsDBNull(8) ? "" : r.GetString(8);
             list.Add(ReadTxn(r, label));
         }
+        AttachRowExtras(list, "txn_extra", "txn_id", t => t.Id, (t, k, v) => t.Extra[k] = v);
         return list;
     }
 
@@ -393,6 +507,8 @@ ORDER BY t.date DESC, t.id DESC";
         cmd.Parameters.AddWithValue("$n", t.Note);
         cmd.Parameters.AddWithValue("$del", Flag(t.Deleted));
         cmd.ExecuteNonQuery();
+        if (t.Id == 0) t.Id = LastInsertId(con);
+        SaveRowExtras("txn_extra", "txn_id", t.Id, t.Extra);
     }
 
     public static void SetTxnDeleted(long id, bool deleted)
@@ -417,7 +533,7 @@ ORDER BY t.date DESC, t.id DESC";
     {
         using var con = Open();
         using var cmd = con.CreateCommand();
-        cmd.CommandText = "DELETE FROM transactions WHERE id=$id";
+        cmd.CommandText = "DELETE FROM txn_extra WHERE txn_id=$id; DELETE FROM transactions WHERE id=$id";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
     }
@@ -466,6 +582,7 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
             string label = r.IsDBNull(15) ? "" : r.GetString(15);
             list.Add(ReadReq(r, pid, label));
         }
+        AttachRowExtras(list, "req_extra", "req_id", q => q.Id, (q, k, v) => q.Extra[k] = v);
         return list;
     }
 
@@ -504,6 +621,8 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
         cmd.Parameters.AddWithValue("$nt", q.Notes);
         cmd.Parameters.AddWithValue("$del", Flag(q.Deleted));
         cmd.ExecuteNonQuery();
+        if (q.Id == 0) q.Id = LastInsertId(con);
+        SaveRowExtras("req_extra", "req_id", q.Id, q.Extra);
     }
 
     public static void SetReqStatus(long id, string status)
@@ -538,7 +657,7 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
     {
         using var con = Open();
         using var cmd = con.CreateCommand();
-        cmd.CommandText = "DELETE FROM requests WHERE id=$id";
+        cmd.CommandText = "DELETE FROM req_extra WHERE req_id=$id; DELETE FROM requests WHERE id=$id";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
     }
@@ -549,11 +668,112 @@ ORDER BY CASE q.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, q.creat
     {
         using var con = Open();
         using var cmd = con.CreateCommand();
-        cmd.CommandText = "DELETE FROM transactions; DELETE FROM requests; DELETE FROM properties;";
+        cmd.CommandText = "DELETE FROM transactions; DELETE FROM requests; DELETE FROM property_extra; DELETE FROM txn_extra; DELETE FROM req_extra; DELETE FROM wait_extra; DELETE FROM waitlist; DELETE FROM properties;";
         cmd.ExecuteNonQuery();
     }
 
     public static long InsertPropRaw(Property p) => SaveProp(p);
     public static void InsertTxnRaw(Txn t) => SaveTxn(t);
     public static void InsertReqRaw(Req q) => SaveReq(q);
+
+    // ---------- waitlist ----------
+
+    public class WaitRow
+    {
+        public long Id;
+        public string Created = "";
+        public string Name = "";
+        public string Phone = "";
+        public string Email = "";
+        public string Desired = "";
+        public string Notes = "";
+        public string Status = "open"; // open | placed | canceled
+        public bool Deleted;
+        public Dictionary<string, string> Extra = new();
+    }
+
+    static WaitRow ReadWait(SqliteDataReader r) => new()
+    {
+        Id = r.GetInt64(0),
+        Created = Str(r[1]),
+        Name = Str(r[2]),
+        Phone = Str(r[3]),
+        Email = Str(r[4]),
+        Desired = Str(r[5]),
+        Notes = Str(r[6]),
+        Status = Str(r[7]) is "placed" or "canceled" ? Str(r[7]) : "open",
+        Deleted = Bool(r[8]),
+    };
+
+    public static List<WaitRow> ListWait(bool deleted = false)
+    {
+        var list = new List<WaitRow>();
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = @"SELECT id,created,name,phone,email,desired,notes,status,deleted
+            FROM waitlist WHERE deleted=$d
+            ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'placed' THEN 1 ELSE 2 END, created, id";
+        cmd.Parameters.AddWithValue("$d", Flag(deleted));
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) list.Add(ReadWait(r));
+        AttachRowExtras(list, "wait_extra", "wait_id", w => w.Id, (w, k, v) => w.Extra[k] = v);
+        return list;
+    }
+
+    public static long SaveWait(WaitRow w)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        if (w.Id == 0)
+        {
+            cmd.CommandText = @"INSERT INTO waitlist(created,name,phone,email,desired,notes,status,deleted)
+                VALUES($c,$n,$p,$e,$d,$nt,$st,$del); SELECT last_insert_rowid();";
+        }
+        else
+        {
+            cmd.CommandText = @"UPDATE waitlist SET created=$c, name=$n, phone=$p, email=$e, desired=$d,
+                notes=$nt, status=$st, deleted=$del WHERE id=$id; SELECT $id;";
+            cmd.Parameters.AddWithValue("$id", w.Id);
+        }
+        cmd.Parameters.AddWithValue("$c", w.Created);
+        cmd.Parameters.AddWithValue("$n", w.Name);
+        cmd.Parameters.AddWithValue("$p", w.Phone);
+        cmd.Parameters.AddWithValue("$e", w.Email);
+        cmd.Parameters.AddWithValue("$d", w.Desired);
+        cmd.Parameters.AddWithValue("$nt", w.Notes);
+        cmd.Parameters.AddWithValue("$st", w.Status);
+        cmd.Parameters.AddWithValue("$del", Flag(w.Deleted));
+        long id = Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+        if (id != 0) SaveRowExtras("wait_extra", "wait_id", id, w.Extra);
+        return id;
+    }
+
+    public static void SetWaitDeleted(long id, bool deleted)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE waitlist SET deleted=$d WHERE id=$id";
+        cmd.Parameters.AddWithValue("$d", Flag(deleted));
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void SetWaitStatus(long id, string status)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE waitlist SET status=$st WHERE id=$id";
+        cmd.Parameters.AddWithValue("$st", status);
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void PurgeWait(long id)
+    {
+        using var con = Open();
+        using var cmd = con.CreateCommand();
+        cmd.CommandText = "DELETE FROM wait_extra WHERE wait_id=$id; DELETE FROM waitlist WHERE id=$id";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
 }

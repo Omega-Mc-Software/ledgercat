@@ -13,6 +13,7 @@ public class MainForm : Form
     readonly RequestsTab reqTab = new();
     readonly ImportExportTab ioTab = new();
     readonly AboutTab aboutTab = new();
+    readonly WaitlistTab waitTab = new();
     readonly Button themeBtn = new() { Dock = DockStyle.Right, Width = 150 };
     readonly Label title = new()
     {
@@ -26,7 +27,7 @@ public class MainForm : Form
 
     public MainForm()
     {
-        Text = "LedgerCat v1.2.8 — by Neko Omega";
+        Text = "LedgerPaw v1.3.0 — by Neko Omega";
         Width = 1120;
         Height = 720;
         MinimumSize = new System.Drawing.Size(900, 600);
@@ -42,6 +43,7 @@ public class MainForm : Form
         AddTab("Properties & Units", propsTab);
         AddTab("Money In / Out", moneyTab);
         AddTab("Requests", reqTab);
+        AddTab("Waitlist", waitTab);
         AddTab("Import / Export", ioTab);
         AddTab("About", aboutTab);
 
@@ -75,13 +77,15 @@ public class MainForm : Form
         if (uc is PropertiesTab p) tabRefresh[page] = p.RefreshData;
         else if (uc is MoneyTab m) tabRefresh[page] = m.RefreshData;
         else if (uc is RequestsTab r) tabRefresh[page] = r.RefreshData;
+        else if (uc is WaitlistTab w) tabRefresh[page] = w.RefreshData;
     }
 
     void RefreshAll()
     {
-        propsTab.RefreshData();
-        moneyTab.RefreshData();
-        reqTab.RefreshData();
+        propsTab.ReloadLayout();
+        moneyTab.ReloadLayout();
+        reqTab.ReloadLayout();
+        waitTab.ReloadLayout();
     }
 
     void ApplyTheme()

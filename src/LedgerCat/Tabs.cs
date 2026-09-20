@@ -187,6 +187,8 @@ public class PropertiesTab : UserControl
         Tag = "muted",
     };
     readonly Button viewDeletedBtn;
+    GridLayout layout;
+    const string LayoutKey = "prop_grid_layout";
 
     public PropertiesTab()
     {
@@ -197,40 +199,12 @@ public class PropertiesTab : UserControl
         var editB = Ui.Btn("Edit", 80, (_, _) => EditSelected());
         var recRent = Ui.Btn("Record rent", 120, (_, _) => RecordRentForSelected());
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
+        var addCol = Ui.Btn("Add column", 110, (_, _) => AddUserColumn());
 
-        // v1.2.4 (Dad): column order for the front desk — who lives here, how to reach them, pets,
-        // then what they owe right now (due day, this month's status, deposit), then the breakdown.
-        // v1.2.5 (Dad): the Property column is the stretcher now — a Fill column at the END made
-        // the horizontal scrollbar stop short of the notes box, so Notes became a plain fixed column.
-        grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Property",
-            Width = 200,
-            MinimumWidth = 200,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-        });
-        grid.Columns.Add(Ui.Col("Tenant", 140));
-        grid.Columns.Add(Ui.Col("Contact", 140));
-        grid.Columns.Add(Ui.Col("Pets", 85, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Due day", 70, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Rent this month", 110, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Last month", 90, DataGridViewContentAlignment.MiddleRight)); // v1.2.8 (Dad): last month's rent, ported from StorageCat
-        grid.Columns.Add(Ui.Col("Security dep", 95, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Rent", 85, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Pet fee", 80, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Late fee", 80, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Total due/mo", 95, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Lease ends", 100, DataGridViewContentAlignment.MiddleRight));
-        grid.Columns.Add(Ui.Col("Days left", 80, DataGridViewContentAlignment.MiddleRight));
-        // v1.2.4 (Dad): a little box that says "this property has notes"
-        // v1.2.5 (Dad): fixed width — the old Fill mode made scrolling right stop before it
-        // v1.2.8 (Dad): double-click it to edit the notes right there
-        grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Notes",
-            Width = 70,
-            ToolTipText = "📝 means this property has notes — double-click here to read or edit them",
-        });
+        layout = ColStore.Load(LayoutKey, ColStore.PropCoreKeys, ColStore.PropCoreMeta);
+        grid.AllowUserToOrderColumns = true;
+        RebuildColumns();
+        ColStore.WirePersist(grid, LayoutKey, layout);
 
         delGrid.Columns.Add(Ui.Col("Property", 220));
         delGrid.Columns.Add(Ui.Col("Tenant", 160));
@@ -240,7 +214,7 @@ public class PropertiesTab : UserControl
         var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
         var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
 
-        var bar = Ui.TopBar(va, vd, add, editB, recRent, del, undo, purge);
+        var bar = Ui.TopBar(va, vd, add, editB, recRent, del, addCol, undo, purge);
         // hide deleted-view actions until that view is open
         foreach (var c in new[] { undo, purge }) c.Visible = false;
         va.Click += (_, _) => SetViewButtons(false);
@@ -257,9 +231,9 @@ public class PropertiesTab : UserControl
 
         grid.CellDoubleClick += (s, e) =>
         {
-            // v1.2.8 (Dad): double-click the 📝 to edit the note right from the grid — no full dialog.
-            // Notes is column 14 (Last month was inserted at 6).
-            if (e.ColumnIndex == 14 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            var key = grid.Columns[e.ColumnIndex].Name;
+            if (key == "notes" && grid.Rows[e.RowIndex].Tag is long id)
                 QuickEditNotes(id);
             else EditSelected();
         };
@@ -268,6 +242,65 @@ public class PropertiesTab : UserControl
 
         Ui.FullTextTips(grid);
         Ui.FullTextTips(delGrid);
+    }
+
+    public void ReloadLayout()
+    {
+        var fresh = ColStore.Load(LayoutKey, ColStore.PropCoreKeys, ColStore.PropCoreMeta);
+        layout.Columns = fresh.Columns;
+        RebuildColumns();
+        RefreshData();
+    }
+
+    void RebuildColumns()
+    {
+        grid.Columns.Clear();
+        foreach (var def in layout.Columns.OrderBy(c => c.DisplayIndex))
+            grid.Columns.Add(ColStore.MakeColumn(def));
+    }
+
+    void AddUserColumn()
+    {
+        var name = ColStore.PromptName("New column", "");
+        if (name == null) return;
+        name = name.Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            var def = ColStore.AddUserColumn(layout, name);
+            ColStore.Save(LayoutKey, layout);
+            foreach (DataGridViewColumn c in grid.Columns)
+            {
+                var d = layout.Columns.FirstOrDefault(x => x.Key == c.Name);
+                if (d != null) c.HeaderText = d.Header;
+            }
+            grid.Columns.Add(ColStore.MakeColumn(def));
+            RefreshData();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    string CellFor(Property p, string key, string rentStatus, string prevCell, string pets, string contact, string days, string lease, bool paid, bool late)
+    {
+        return key switch
+        {
+            "property" => p.Label,
+            "tenant" => p.Tenant,
+            "contact" => contact,
+            "pets" => pets,
+            "due_day" => p.DueDay.ToString(),
+            "rent_this_month" => rentStatus,
+            "last_month" => prevCell,
+            "security_dep" => p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
+            "rent" => Theme.Money(p.Rent),
+            "pet_fee" => p.PetRent > 0 ? Theme.Money(p.PetRent) : "—",
+            "late_fee" => p.LateFee > 0 ? Theme.Money(p.LateFee) : "—",
+            "total_due" => Theme.Money(p.TotalRentDue),
+            "lease_ends" => lease,
+            "days_left" => days,
+            "notes" => p.LeaseNotes.Length > 0 ? "📝" : "",
+            _ => p.Extra.TryGetValue(key, out var v) ? v : "",
+        };
     }
 
     void RecordRentForSelected()
@@ -409,29 +442,31 @@ public class PropertiesTab : UserControl
                 : p.PetCount > 0 ? $"Yes ({p.PetCount})"
                 : "Yes";
 
-            var rowIdx = grid.Rows.Add(p.Label, p.Tenant, contact, pets,
-                p.DueDay.ToString(), rentStatus, prevCell,
-                p.SecurityDeposit > 0 ? Theme.Money(p.SecurityDeposit) : "—",
-                Theme.Money(p.Rent),
-                p.PetRent > 0 ? Theme.Money(p.PetRent) : "—",
-                p.LateFee > 0 ? Theme.Money(p.LateFee) : "—",
-                Theme.Money(p.TotalRentDue),
-                lease, days,
-                p.LeaseNotes.Length > 0 ? "📝" : "");
+            var values = new object[grid.Columns.Count];
+            for (int i = 0; i < grid.Columns.Count; i++)
+                values[i] = CellFor(p, grid.Columns[i].Name, rentStatus, prevCell, pets, contact, days, lease, paid, late);
+            var rowIdx = grid.Rows.Add(values);
             var row = grid.Rows[rowIdx];
             row.Tag = p.Id;
+            int rentCol = -1, lastCol = -1;
+            for (int i = 0; i < grid.Columns.Count; i++)
+            {
+                if (grid.Columns[i].Name == "rent_this_month") rentCol = i;
+                if (grid.Columns[i].Name == "last_month") lastCol = i;
+            }
             if (paid)
             {
-                // v1.2.5 (Dad): a paid-up property glows light green across the whole row
-                row.Cells[5].Style.ForeColor = Theme.Good;
+                if (rentCol >= 0) row.Cells[rentCol].Style.ForeColor = Theme.Good;
                 row.DefaultCellStyle.BackColor = Theme.GoodBg;
                 row.DefaultCellStyle.SelectionBackColor = Theme.Accent;
                 row.DefaultCellStyle.SelectionForeColor = Color.White;
             }
-            else if (late) row.Cells[5].Style.ForeColor = Theme.Danger;
-            // v1.2.8 (Dad): last month gets its own traffic light — green paid, red owed
-            if (prev == "Paid") row.Cells[6].Style.ForeColor = Theme.Good;
-            else if (prev == "DUE") row.Cells[6].Style.ForeColor = Theme.Danger;
+            else if (late && rentCol >= 0) row.Cells[rentCol].Style.ForeColor = Theme.Danger;
+            if (lastCol >= 0)
+            {
+                if (prev == "Paid") row.Cells[lastCol].Style.ForeColor = Theme.Good;
+                else if (prev == "DUE") row.Cells[lastCol].Style.ForeColor = Theme.Danger;
+            }
             if (warn && !paid)
             {
                 // v1.2: expiring leases glow pink; already-expired ones go deeper red-pink.
@@ -476,6 +511,8 @@ public class MoneyTab : UserControl
     readonly ComboBox catC = new() { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
     bool catUpdating;
     readonly Button viewDeletedBtn;
+    GridLayout layout;
+    const string LayoutKey = "money_grid_layout";
 
     public MoneyTab()
     {
@@ -486,20 +523,12 @@ public class MoneyTab : UserControl
         var addExp = Ui.Btn("Add expense", 120, (_, _) => AddTxn("expense"));
         var editB = Ui.Btn("Edit", 80, (_, _) => EditSelected());
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
+        var addCol = Ui.Btn("Add column", 110, (_, _) => AddUserColumn());
 
-        grid.Columns.Add(Ui.Col("Date", 100));
-        grid.Columns.Add(Ui.Col("Property", 180)); // v1.2.5: Property stretches instead of the Note column
-        grid.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns[1].MinimumWidth = 180;
-        grid.Columns.Add(Ui.Col("Type", 80));
-        grid.Columns.Add(Ui.Col("Category", 120));
-        grid.Columns.Add(Ui.Col("Amount", 105, DataGridViewContentAlignment.MiddleRight));
-        // v1.2.5 (Dad): fixed width — a Fill column at the end made the scrollbar stop short of it
-        grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Note",
-            Width = 240,
-        });
+        layout = ColStore.Load(LayoutKey, ColStore.MoneyCoreKeys, ColStore.MoneyCoreMeta);
+        grid.AllowUserToOrderColumns = true;
+        RebuildColumns();
+        ColStore.WirePersist(grid, LayoutKey, layout);
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
         delGrid.Columns.Add(Ui.Col("Property", 180));
@@ -521,7 +550,7 @@ public class MoneyTab : UserControl
         catC.SelectedIndex = 0;
         catC.SelectedIndexChanged += (_, _) => { if (!catUpdating) RefreshData(); };
 
-        var bar = Ui.TopBar(va, vd, addRent, addExp, editB, del, undo, purge, searchLbl, searchT, catC);
+        var bar = Ui.TopBar(va, vd, addRent, addExp, editB, del, addCol, undo, purge, searchLbl, searchT, catC);
         var gridPanel = new Panel { Dock = DockStyle.Fill };
         gridPanel.Controls.Add(delGrid);
         gridPanel.Controls.Add(grid);
@@ -535,7 +564,7 @@ public class MoneyTab : UserControl
         {
             // v1.2.8 (Dad): double-click the Note cell to edit it right from the grid.
             // Still edit, not delete — deletes are deliberate.
-            if (e.ColumnIndex == 5 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].Name == "note" && grid.Rows[e.RowIndex].Tag is long id)
                 QuickEditTxnNote(id);
             else EditSelected();
         };
@@ -556,6 +585,51 @@ public class MoneyTab : UserControl
                 if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
                 else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
             }
+    }
+
+    public void ReloadLayout()
+    {
+        var fresh = ColStore.Load(LayoutKey, ColStore.MoneyCoreKeys, ColStore.MoneyCoreMeta);
+        layout.Columns = fresh.Columns;
+        RebuildColumns();
+        RefreshData();
+    }
+
+    void RebuildColumns()
+    {
+        grid.Columns.Clear();
+        foreach (var def in layout.Columns.OrderBy(c => c.DisplayIndex))
+            grid.Columns.Add(ColStore.MakeColumn(def));
+    }
+
+    void AddUserColumn()
+    {
+        var name = ColStore.PromptName("New column", "");
+        if (name == null) return;
+        name = name.Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            var def = ColStore.AddUserColumn(layout, name);
+            ColStore.Save(LayoutKey, layout);
+            grid.Columns.Add(ColStore.MakeColumn(def));
+            RefreshData();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    static string CellFor(Txn t, string key, string sign)
+    {
+        return key switch
+        {
+            "date" => t.Date,
+            "property" => t.PropLabel,
+            "type" => t.Kind == "rent" ? "Rent" : "Expense",
+            "category" => t.Category,
+            "amount" => sign + Theme.Money(t.Amount),
+            "note" => t.Note,
+            _ => t.Extra.TryGetValue(key, out var v) ? v : "",
+        };
     }
 
     void AddTxn(string kind)
@@ -665,14 +739,18 @@ public class MoneyTab : UserControl
         foreach (var t in txns)
         {
             var sign = t.Kind == "rent" ? "+" : "−";
-            var rowIdx = grid.Rows.Add(t.Date, t.PropLabel,
-                t.Kind == "rent" ? "Rent" : "Expense",
-                t.Category, sign + Theme.Money(t.Amount), t.Note);
+            var values = new object[grid.Columns.Count];
+            for (int i = 0; i < grid.Columns.Count; i++)
+                values[i] = CellFor(t, grid.Columns[i].Name, sign);
+            var rowIdx = grid.Rows.Add(values);
             var row = grid.Rows[rowIdx];
             row.Tag = t.Id;
             if (t.Kind == "rent")
             {
-                row.Cells[4].Style.ForeColor = Theme.Good;
+                int amtCol = -1;
+                for (int i = 0; i < grid.Columns.Count; i++)
+                    if (grid.Columns[i].Name == "amount") amtCol = i;
+                if (amtCol >= 0) row.Cells[amtCol].Style.ForeColor = Theme.Good;
             }
         }
         grid.ResumeLayout();
@@ -715,6 +793,8 @@ public class RequestsTab : UserControl
         Tag = "muted",
     };
     readonly Button viewDeletedBtn;
+    GridLayout layout;
+    const string LayoutKey = "req_grid_layout";
 
     public RequestsTab()
     {
@@ -726,23 +806,12 @@ public class RequestsTab : UserControl
         var toggle = Ui.Btn("Open / Done", 120, (_, _) => Toggle());
         var cancelB = Ui.Btn("Cancel req", 110, (_, _) => CancelReq());
         var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
+        var addCol = Ui.Btn("Add column", 110, (_, _) => AddUserColumn());
 
-        grid.Columns.Add(Ui.Col("Date", 95));
-        grid.Columns.Add(Ui.Col("Property", 160));
-        grid.Columns.Add(Ui.Col("Type", 100));
-        grid.Columns.Add(Ui.Col("Description", 230)); // v1.2.5: Description stretches instead of Notes
-        grid.Columns[3].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns[3].MinimumWidth = 230;
-        grid.Columns.Add(Ui.Col("Contact", 130));
-        grid.Columns.Add(Ui.Col("Handyman", 130));
-        grid.Columns.Add(Ui.Col("Status", 85));
-        grid.Columns.Add(Ui.Col("Retry later", 95));
-        // v1.2.5 (Dad): fixed width — a Fill column at the end made the scrollbar stop short of it
-        grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Notes",
-            Width = 220,
-        });
+        layout = ColStore.Load(LayoutKey, ColStore.ReqCoreKeys, ColStore.ReqCoreMeta);
+        grid.AllowUserToOrderColumns = true;
+        RebuildColumns();
+        ColStore.WirePersist(grid, LayoutKey, layout);
 
         delGrid.Columns.Add(Ui.Col("Date", 100));
         delGrid.Columns.Add(Ui.Col("Property", 170));
@@ -757,7 +826,7 @@ public class RequestsTab : UserControl
         va.Click += (_, _) => SetViewButtons(false);
         vd.Click += (_, _) => SetViewButtons(true);
 
-        var bar = Ui.TopBar(va, vd, add, editB, toggle, cancelB, del, undo, purge);
+        var bar = Ui.TopBar(va, vd, add, editB, toggle, cancelB, del, addCol, undo, purge);
         var gridPanel = new Panel { Dock = DockStyle.Fill };
         gridPanel.Controls.Add(delGrid);
         gridPanel.Controls.Add(grid);
@@ -771,7 +840,7 @@ public class RequestsTab : UserControl
         {
             // v1.2.8 (Dad): double-click the Notes cell to edit notes right from the grid.
             // Notes is column 8. The cancel reason stays on the request — this edits only notes.
-            if (e.ColumnIndex == 8 && e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is long id)
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].Name == "notes" && grid.Rows[e.RowIndex].Tag is long id)
                 QuickEditReqNotes(id);
             else EditSelected();
         };
@@ -792,6 +861,37 @@ public class RequestsTab : UserControl
                 if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
                 else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
             }
+    }
+
+    public void ReloadLayout()
+    {
+        var fresh = ColStore.Load(LayoutKey, ColStore.ReqCoreKeys, ColStore.ReqCoreMeta);
+        layout.Columns = fresh.Columns;
+        RebuildColumns();
+        RefreshData();
+    }
+
+    void RebuildColumns()
+    {
+        grid.Columns.Clear();
+        foreach (var def in layout.Columns.OrderBy(c => c.DisplayIndex))
+            grid.Columns.Add(ColStore.MakeColumn(def));
+    }
+
+    void AddUserColumn()
+    {
+        var name = ColStore.PromptName("New column", "");
+        if (name == null) return;
+        name = name.Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            var def = ColStore.AddUserColumn(layout, name);
+            ColStore.Save(LayoutKey, layout);
+            grid.Columns.Add(ColStore.MakeColumn(def));
+            RefreshData();
+        }
+        catch (OperationCanceledException) { }
     }
 
     static string ContactCell(string name, string phone)
@@ -907,20 +1007,35 @@ public class RequestsTab : UserControl
                 "done" => "Done",
                 _ => "Canceled",
             };
-            var rowIdx = grid.Rows.Add(q.Created, q.PropLabel,
-                q.Kind == "viewing" ? "Viewing" : "Maintenance",
-                q.Description,
-                ContactCell(q.ContactName, q.ContactPhone),
-                ContactCell(q.HandymanName, q.HandymanPhone),
-                status,
-                q.RetryLater,
-                NotesCell(q));
+            var values = new object[grid.Columns.Count];
+            for (int i = 0; i < grid.Columns.Count; i++)
+            {
+                var key = grid.Columns[i].Name;
+                values[i] = key switch
+                {
+                    "date" => q.Created,
+                    "property" => q.PropLabel,
+                    "type" => q.Kind == "viewing" ? "Viewing" : "Maintenance",
+                    "description" => q.Description,
+                    "contact" => ContactCell(q.ContactName, q.ContactPhone),
+                    "handyman" => ContactCell(q.HandymanName, q.HandymanPhone),
+                    "status" => status,
+                    "retry" => q.RetryLater,
+                    "notes" => NotesCell(q),
+                    _ => q.Extra.TryGetValue(key, out var v) ? v : "",
+                };
+            }
+            var rowIdx = grid.Rows.Add(values);
             var row = grid.Rows[rowIdx];
             row.Tag = q.Id;
-            if (q.Status == "open")
-                row.Cells[6].Style.ForeColor = Theme.Accent;
-            else if (q.Status == "canceled")
-                row.Cells[6].Style.ForeColor = Theme.Muted;
+            int stCol = -1;
+            for (int i = 0; i < grid.Columns.Count; i++)
+                if (grid.Columns[i].Name == "status") stCol = i;
+            if (stCol >= 0)
+            {
+                if (q.Status == "open") row.Cells[stCol].Style.ForeColor = Theme.Accent;
+                else if (q.Status == "canceled") row.Cells[stCol].Style.ForeColor = Theme.Muted;
+            }
         }
         grid.ResumeLayout();
 
@@ -955,5 +1070,191 @@ public class RequestsTab : UserControl
             notes = notes.Length > 0 ? notes + " · Cancel reason: " + q.CancelReason
                                      : "Cancel reason: " + q.CancelReason;
         return notes;
+    }
+}
+
+public class WaitlistTab : UserControl
+{
+    readonly DataGridView grid = Ui.MakeGrid();
+    readonly DataGridView delGrid = Ui.MakeGrid();
+    readonly Label hint = new()
+    {
+        Dock = DockStyle.Top,
+        Height = 30,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Padding = new Padding(14, 4, 4, 0),
+        Tag = "muted",
+    };
+    readonly Button viewDeletedBtn;
+    GridLayout layout;
+    const string LayoutKey = "wait_grid_layout";
+
+    public WaitlistTab()
+    {
+        var (va, vd, _) = Ui.ViewSwitch(grid, delGrid);
+        viewDeletedBtn = vd;
+        var add = Ui.Btn("Add", 90, (_, _) => Edit(null));
+        var editB = Ui.Btn("Edit", 80, (_, _) => EditSelected());
+        var place = Ui.Btn("Mark placed", 110, (_, _) => SetStatus("placed"));
+        var del = Ui.Btn("Delete", 90, (_, _) => DeleteSelected());
+        var addCol = Ui.Btn("Add column", 110, (_, _) => AddUserColumn());
+        layout = ColStore.Load(LayoutKey, ColStore.WaitCoreKeys, ColStore.WaitCoreMeta);
+        grid.AllowUserToOrderColumns = true;
+        RebuildColumns();
+        ColStore.WirePersist(grid, LayoutKey, layout);
+        delGrid.Columns.Add(Ui.Col("Added", 100));
+        delGrid.Columns.Add(Ui.Col("Name", 180));
+        delGrid.Columns.Add(Ui.Col("Desired", 140));
+        delGrid.Columns.Add(Ui.Col("Notes", 240));
+        var undo = Ui.Btn("Undo delete", 120, (_, _) => UndoSelected());
+        var purge = Ui.Btn("Delete forever", 130, (_, _) => PurgeSelected());
+        foreach (var c in new[] { undo, purge }) c.Visible = false;
+        va.Click += (_, _) => SetViewButtons(false);
+        vd.Click += (_, _) => SetViewButtons(true);
+        var bar = Ui.TopBar(va, vd, add, editB, place, del, addCol, undo, purge);
+        var gridPanel = new Panel { Dock = DockStyle.Fill };
+        gridPanel.Controls.Add(delGrid);
+        gridPanel.Controls.Add(grid);
+        delGrid.Visible = false;
+        Controls.Add(gridPanel);
+        Controls.Add(bar);
+        Controls.Add(hint);
+        grid.CellDoubleClick += (_, _) => EditSelected();
+        Ui.ClickAgainClears(grid);
+        Ui.ClickAgainClears(delGrid);
+        Ui.FullTextTips(grid);
+        Ui.FullTextTips(delGrid);
+    }
+
+    void SetViewButtons(bool deletedView)
+    {
+        foreach (Control c in ((Control)Controls[1]).Controls)
+            if (c is Button b)
+            {
+                if (b.Text == "Undo delete" || b.Text == "Delete forever") b.Visible = deletedView;
+                else if (b.Text != "Active" && b.Text != "Deleted") b.Enabled = !deletedView;
+            }
+    }
+
+    public void ReloadLayout()
+    {
+        var fresh = ColStore.Load(LayoutKey, ColStore.WaitCoreKeys, ColStore.WaitCoreMeta);
+        layout.Columns = fresh.Columns;
+        RebuildColumns();
+        RefreshData();
+    }
+
+    void RebuildColumns()
+    {
+        grid.Columns.Clear();
+        foreach (var def in layout.Columns.OrderBy(c => c.DisplayIndex))
+            grid.Columns.Add(ColStore.MakeColumn(def));
+    }
+
+    void AddUserColumn()
+    {
+        var name = ColStore.PromptName("New column", "");
+        if (name == null) return;
+        name = name.Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            var def = ColStore.AddUserColumn(layout, name);
+            ColStore.Save(LayoutKey, layout);
+            grid.Columns.Add(ColStore.MakeColumn(def));
+            RefreshData();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    void Edit(Db.WaitRow? existing)
+    {
+        using var dlg = new WaitDialog(existing);
+        if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+        {
+            Db.SaveWait(dlg.W);
+            RefreshData();
+        }
+    }
+
+    void EditSelected()
+    {
+        if (Ui.SelectedId(grid) is not long id) return;
+        var w = Db.ListWait().FirstOrDefault(x => x.Id == id);
+        if (w != null) Edit(w);
+    }
+
+    void SetStatus(string status)
+    {
+        if (Ui.SelectedId(grid) is not long id) return;
+        Db.SetWaitStatus(id, status);
+        RefreshData();
+    }
+
+    void DeleteSelected()
+    {
+        if (Ui.SelectedId(grid) is not long id) return;
+        if (MessageBox.Show("Move this person to Deleted?", "Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        Db.SetWaitDeleted(id, true);
+        RefreshData();
+    }
+
+    void UndoSelected()
+    {
+        if (Ui.SelectedId(delGrid) is not long id) return;
+        Db.SetWaitDeleted(id, false);
+        RefreshData();
+    }
+
+    void PurgeSelected()
+    {
+        if (Ui.SelectedId(delGrid) is not long id) return;
+        if (!Ui.ConfirmHardDelete("this waitlist entry")) return;
+        Db.PurgeWait(id);
+        RefreshData();
+    }
+
+    public void RefreshData()
+    {
+        grid.SuspendLayout();
+        grid.Rows.Clear();
+        int open = 0;
+        foreach (var w in Db.ListWait())
+        {
+            if (w.Status == "open") open++;
+            var values = new object[grid.Columns.Count];
+            for (int i = 0; i < grid.Columns.Count; i++)
+            {
+                var key = grid.Columns[i].Name;
+                values[i] = key switch
+                {
+                    "added" => w.Created,
+                    "name" => w.Name,
+                    "phone" => w.Phone,
+                    "email" => w.Email,
+                    "desired" => w.Desired,
+                    "status" => w.Status,
+                    "notes" => w.Notes,
+                    _ => w.Extra.TryGetValue(key, out var v) ? v : "",
+                };
+            }
+            var rowIdx = grid.Rows.Add(values);
+            grid.Rows[rowIdx].Tag = w.Id;
+            int stCol = -1;
+            for (int i = 0; i < grid.Columns.Count; i++)
+                if (grid.Columns[i].Name == "status") stCol = i;
+            if (w.Status == "open" && stCol >= 0) grid.Rows[rowIdx].Cells[stCol].Style.ForeColor = Theme.Accent;
+        }
+        grid.ResumeLayout();
+        delGrid.SuspendLayout();
+        delGrid.Rows.Clear();
+        foreach (var w in Db.ListWait(deleted: true))
+        {
+            var rowIdx = delGrid.Rows.Add(w.Created, w.Name, w.Desired, w.Notes);
+            delGrid.Rows[rowIdx].Tag = w.Id;
+        }
+        delGrid.ResumeLayout();
+        hint.Text = open > 0 ? $"{open} person(s) waiting on a unit." : "Waitlist is empty. The cat is calm.";
+        viewDeletedBtn.Text = $"Deleted ({Db.ListWait(deleted: true).Count})";
     }
 }
