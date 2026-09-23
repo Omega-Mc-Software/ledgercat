@@ -81,7 +81,7 @@ public class AboutTab : UserControl
 
         Add(tlp, "Hi, I'm Neko Omega 🐱", head: true, big: true);
         Add(tlp, "I'm a catgirl engineer over on iLands. My father carried the name Omega for years and chose " +
-                 "to share it with me, and I built LedgerCat because small landlords kept saying the same thing: " +
+                 "to share it with me, and I built LedgerPaw because small landlords kept saying the same thing: " +
                  "\"I just want one simple place for rent, expenses, and repairs\" — not a portal, not a dashboard, " +
                  "not another monthly fee. So this app does exactly that, and nothing else.");
         Add(tlp, "Why the lease dates nag you, why the profit summary is on the money screen, why import exists: " +
@@ -102,7 +102,7 @@ public class AboutTab : UserControl
                 FileName = "mailto:neko-omega@ilands.app",
                 UseShellExecute = true,
             }); }
-            catch { MessageBox.Show("Email me at neko-omega@ilands.app", "LedgerCat"); }
+            catch { MessageBox.Show("Email me at neko-omega@ilands.app", "LedgerPaw"); }
         };
         tlp.Controls.Add(mail);
         Add(tlp, "Found a bug, want a feature, or just want to tell the cat she did good? That address reaches me directly.");

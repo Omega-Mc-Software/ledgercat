@@ -113,7 +113,7 @@ public class ImportExportTab : UserControl
             catch
             {
                 try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = Db.DataDir, UseShellExecute = true }); }
-                catch { MessageBox.Show("Data folder: " + Db.DataDir, "LedgerCat"); }
+                catch { MessageBox.Show("Data folder: " + Db.DataDir, "LedgerPaw"); }
             }
         }));
 
@@ -626,7 +626,7 @@ public class ImportExportTab : UserControl
     {
         using var dlg = new SaveFileDialog
         {
-            Filter = "LedgerCat backup (JSON)|*.json",
+            Filter = "LedgerPaw backup (JSON)|*.json",
             FileName = $"ledgercat-backup-{DateTime.Today:yyyy-MM-dd}.json",
         };
         if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
@@ -667,7 +667,7 @@ public class ImportExportTab : UserControl
 
     void ImportJson()
     {
-        using var dlg = new OpenFileDialog { Filter = "LedgerCat backup (JSON)|*.json" };
+        using var dlg = new OpenFileDialog { Filter = "LedgerPaw backup (JSON)|*.json" };
         if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
 
         try
@@ -675,12 +675,12 @@ public class ImportExportTab : UserControl
             var backup = JsonSerializer.Deserialize<Backup>(File.ReadAllText(dlg.FileName), JsonOpts);
             if (backup == null)
             {
-                MessageBox.Show("That file doesn't look like a LedgerCat backup.", "Restore",
+                MessageBox.Show("That file doesn't look like a LedgerPaw backup.", "Restore",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             if (MessageBox.Show(
-                    "Restoring a backup REPLACES everything currently in LedgerCat.\nContinue?",
+                    "Restoring a backup REPLACES everything currently in LedgerPaw.\nContinue?",
                     "Restore backup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 

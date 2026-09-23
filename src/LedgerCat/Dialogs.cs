@@ -183,18 +183,18 @@ public class PropertyDialog : Form
     {
         if (string.IsNullOrWhiteSpace(nameT.Text))
         {
-            MessageBox.Show("Property needs a name.", "LedgerCat", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Property needs a name.", "LedgerPaw", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoney(rentT.Text, out var rent))
         {
-            MessageBox.Show("Rent must be a number greater than 0 (0 is fine too — type 0).", "LedgerCat",
+            MessageBox.Show("Rent must be a number greater than 0 (0 is fine too — type 0).", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!int.TryParse(dueT.Text, out var due) || due < 1 || due > 28)
         {
-            MessageBox.Show("Due day must be a number from 1 to 28.", "LedgerCat",
+            MessageBox.Show("Due day must be a number from 1 to 28.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -202,7 +202,7 @@ public class PropertyDialog : Form
         DateOnly leaseEnd = default, start = default;
         if (lease.Length > 0 && !Ui.ParseDate(lease, out leaseEnd))
         {
-            MessageBox.Show("Lease end date should look like 2027-08-31, or stay empty.", "LedgerCat",
+            MessageBox.Show("Lease end date should look like 2027-08-31, or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -211,19 +211,19 @@ public class PropertyDialog : Form
         string leaseStart = leaseStartT.Text.Trim();
         if (leaseStart.Length > 0 && !Ui.ParseDate(leaseStart, out start))
         {
-            MessageBox.Show("Lease start date should look like 2026-09-01, or stay empty.", "LedgerCat",
+            MessageBox.Show("Lease start date should look like 2026-09-01, or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (leaseStart.Length > 0 && lease.Length > 0 && start > leaseEnd)
         {
-            MessageBox.Show("Lease start is after lease end — double-check the two dates.", "LedgerCat",
+            MessageBox.Show("Lease start is after lease end — double-check the two dates.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoneyOrZero(secDepT.Text, out var secDep))
         {
-            MessageBox.Show("Security deposit must be a number (0 or more), or stay empty.", "LedgerCat",
+            MessageBox.Show("Security deposit must be a number (0 or more), or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -231,25 +231,25 @@ public class PropertyDialog : Form
         if (petCountT.Text.Trim() != "" &&
             (!int.TryParse(petCountT.Text.Trim(), out petCount) || petCount < 0))
         {
-            MessageBox.Show("Pet count must be a whole number (0 or more), or stay empty.", "LedgerCat",
+            MessageBox.Show("Pet count must be a whole number (0 or more), or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoneyOrZero(petRentT.Text, out var petRent))
         {
-            MessageBox.Show("Pet rent must be a number (0 or more), or stay empty.", "LedgerCat",
+            MessageBox.Show("Pet rent must be a number (0 or more), or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoneyOrZero(petDepT.Text, out var petDep))
         {
-            MessageBox.Show("Pet deposit must be a number (0 or more), or stay empty.", "LedgerCat",
+            MessageBox.Show("Pet deposit must be a number (0 or more), or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoneyOrZero(lateFeeT.Text, out var lateFee))
         {
-            MessageBox.Show("Late fee must be a number (0 or more), or stay empty.", "LedgerCat",
+            MessageBox.Show("Late fee must be a number (0 or more), or stay empty.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -473,13 +473,13 @@ public class TxnDialog : Form
     {
         if (!Ui.ParseDate(dateT.Text, out var d))
         {
-            MessageBox.Show("Date should look like 2026-09-11.", "LedgerCat",
+            MessageBox.Show("Date should look like 2026-09-11.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (!Ui.ParseMoney(amountT.Text, out var amount))
         {
-            MessageBox.Show("Amount must be a number greater than 0.", "LedgerCat",
+            MessageBox.Show("Amount must be a number greater than 0.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -652,13 +652,13 @@ public class ReqDialog : Form
     {
         if (!Ui.ParseDate(dateT.Text, out var d))
         {
-            MessageBox.Show("Date should look like 2026-09-11.", "LedgerCat",
+            MessageBox.Show("Date should look like 2026-09-11.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (string.IsNullOrWhiteSpace(descT.Text))
         {
-            MessageBox.Show("Write a short description of what's needed.", "LedgerCat",
+            MessageBox.Show("Write a short description of what's needed.", "LedgerPaw",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
